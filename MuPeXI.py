@@ -8,7 +8,7 @@ MuPeXI.py extracts user defined peptides lengths around missense variant mutatio
 Information from each mutation is annotated together with the mutant and normal peptides in the file output. 
 """
 
-# Import modules 
+# Import modules
 from collections import defaultdict, namedtuple
 from datetime import datetime
 from itertools import izip
@@ -487,38 +487,58 @@ def create_vep_compatible_vcf(vcf_file, webserver, keep_tmp, outdir, file_prefix
     return vcf_sorted_file
 
 
-
-
-
 def extract_allele_frequency(vcf_sorted_file, webserver, variant_caller):
-    print_ifnot_webserver('\tExtracting allele frequencies', webserver) 
+    """
+    :param vcf_sorted_file: vcf file as the output of create_vep_compatible_vcf() function
+    :param webserver: bool, whether you perform analysis on the webserver
+    :param variant_caller: str, what program was used for the variant colling, Mutec and Mutec2 preffered
+    :return: defaultdict, dict with mutation_id : tumor_vaf values
+    """
+
+    print_ifnot_webserver('\tExtracting allele frequencies', webserver)
     allele_fractions = defaultdict(dict)
 
-    if not variant_caller in ('MuTect','MuTect2'):
-        allele_fractions = None # no variant caller detected
+    if not variant_caller in ('MuTect', 'MuTect2'):
+        allele_fractions = None  # no variant caller detected
     else:
         with open(vcf_sorted_file.name) as f:
             for line in f.readlines():
-                if line.startswith('#'):
+                if line.startswith('##'):
                     continue
-                columns = line.split('\t')
-                chromosome = columns[0].strip()
-                genomic_position = columns[1].strip()
-                reference_allele = columns[3].strip()
-                altered_allele = columns[4].strip()
-                format_fields = columns[8].strip().split(':')
-                if not len(reference_allele) == len(altered_allele):
-                    altered_allele = altered_allele[1:] if len(reference_allele) < len(altered_allele) else altered_allele
-                    altered_allele = '-' if len(reference_allele) > len(altered_allele) else altered_allele
-                if variant_caller == 'MuTect':
-                    allele_fraction = columns[9].split(':')[format_fields.index('FA')].strip() # GT:AD:BQ:DP:FA
-                elif variant_caller == 'MuTect2':
-                    allele_fraction = columns[9].split(':')[format_fields.index('AF')].strip() # GT:AD:AF:ALT_F1R2:ALT_F2R1:FOXOG:QSS:REF_F1R2:REF_F2R1
-                ID = '{chromosome}_{genomic_position}_{altered_allele}'.format(
-                    chromosome = chromosome, 
-                    genomic_position = genomic_position if not altered_allele == '-' else int(genomic_position) + 1,
-                    altered_allele = altered_allele)
-                allele_fractions[ID] = allele_fraction
+                elif line.startswith('#'):
+                    header = line.split('\t')
+                    header = [re.sub(r'\n|#', '', file) for file in header]
+
+                    chr_i = header.index('CHROM')
+                    pos_i = header.index('POS')
+                    ref_i = header.index('REF')
+                    alt_i = header.index('ALT')
+                    format_i = header.index('FORMAT')
+
+                    tumor_meta_i = [i for i, item in enumerate(header) if item.endswith('_T')][0]
+                else:
+                    columns = line.split('\t')
+                    chromosome = columns[chr_i].strip()
+                    genomic_position = columns[pos_i].strip()
+                    reference_allele = columns[ref_i].strip()
+                    altered_allele = columns[alt_i].strip()
+                    format_fields = columns[format_i].strip().split(':')
+                    if not len(reference_allele) == len(altered_allele):
+                        altered_allele = altered_allele[1:] if len(reference_allele) < len(
+                            altered_allele) else altered_allele
+                        altered_allele = '-' if len(reference_allele) > len(altered_allele) else altered_allele
+                    if variant_caller == 'MuTect':
+                        allele_fraction = columns[tumor_meta_i].split(':')[
+                            format_fields.index('FA')].strip()  # GT:AD:BQ:DP:FA
+                    elif variant_caller == 'MuTect2':
+                        allele_fraction = columns[tumor_meta_i].split(':')[
+                            format_fields.index('AF')].strip()  # GT:AD:AF:ALT_F1R2:ALT_F2R1:FOXOG:QSS:REF_F1R2:REF_F2R1
+                    ID = '{chromosome}_{genomic_position}_{altered_allele}'.format(
+                        chromosome=chromosome,
+                        genomic_position=genomic_position if not altered_allele == '-' else int(genomic_position) + 1,
+                        altered_allele=altered_allele)
+                    allele_fractions[ID] = allele_fraction
+
     return allele_fractions
 
 
