@@ -9,16 +9,22 @@ Information from each mutation is annotated together with the mutant and normal 
 """
 
 # Import modules
+from __future__ import absolute_import
+from __future__ import print_function
 from collections import defaultdict, namedtuple
 from datetime import datetime
-from itertools import izip
+from six.moves import map
+from six.moves import range
+
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from Bio import BiopythonWarning
-from ConfigParser import SafeConfigParser
+from six.moves.configparser import SafeConfigParser
 from tempfile import NamedTemporaryFile
 import psutil
 import sys, re, getopt, itertools, warnings, string, subprocess, os.path, math, tempfile, shutil, numpy, pandas
+import six
+from six.moves import zip
 
 
 def main(args):
@@ -120,7 +126,7 @@ def check_input_paths(input_, peptide_lengths, species):
     category_list, id_list = create_lits_for_path_checkup(peptide_lengths)
 
     # parse files stated in config file 
-    for category, ID in izip(category_list, id_list):
+    for category, ID in zip(category_list, id_list):
         file_path = config_parse(input_.config, category, ID)
         check_path(file_path)
         file_names[ID] = file_path
@@ -204,7 +210,7 @@ def check_vcf_file(vcf_file, liftover, species, webserver):
 
 def check_netMHC_path(netMHC_path):
     if 'netH2pan' in netMHC_path:
-        print '\tMouse specific MHC binding predictor netH2pan used'
+        print('\tMouse specific MHC binding predictor netH2pan used')
     elif 'netMHCpan' in netMHC_path:
         if not '4.0' in netMHC_path:
             usage(); sys.exit('ERROR:\tnetMHCpan version 4.0 not stated in path {}\n\tOnly this version is supported'.format(netMHC_path))
@@ -250,7 +256,7 @@ def print_mem_usage():
     # total memory usage 
     process = psutil.Process(os.getpid())
     process_mb = float(process.memory_info().rss / 1000000)
-    print 'Total mem usage: {} MB'.format(process_mb)
+    print('Total mem usage: {} MB'.format(process_mb))
 
 
 
@@ -393,11 +399,11 @@ def extract_peptide_length(peptide_length):
         peptide_length_list.append(peptide_length)
     else:
         if '-' in peptide_length:
-            length_range = map(int,peptide_length.split('-'))
+            length_range = list(map(int,peptide_length.split('-')))
             assert length_range[1] > length_range[0], 'peptide length range should be stated from lowest to highest. your input: {}'.format(peptide_length)
-            peptide_length_list = range(length_range[0], length_range[1] + 1)
+            peptide_length_list = list(range(length_range[0], length_range[1] + 1))
         elif ',' in peptide_length:
-            peptide_length_list = map(int, peptide_length.split(','))
+            peptide_length_list = list(map(int, peptide_length.split(',')))
         else:
             peptide_length_list.append(int(peptide_length))
     return peptide_length_list
@@ -570,9 +576,9 @@ def run_vep(vcf_sorted_file, webserver, tmp_dir, vep_path, vep_dir, keep_tmp, fi
     
     # Test if VEP file is empty 
     if os.stat(vep_file.name).st_size == 0 :
-        print('\nERROR:\tVEP output file empty\nVEP:\t{}'.format(error))
+        print(('\nERROR:\tVEP output file empty\nVEP:\t{}'.format(error)))
         if "use an undefined value as a symbol reference at" in error :
-            print "NOTE:\tCheck the VCF file have been generated with The GRCh38 assembly - or use the liftover option"
+            print("NOTE:\tCheck the VCF file have been generated with The GRCh38 assembly - or use the liftover option")
         sys.exit()
 
     keep_temp_file(keep_tmp, 'vep', vep_file.name, file_prefix, outdir, None, 'vep')
@@ -900,7 +906,7 @@ def detect_stop_codon (mutation_sequence, mutation_info):
                     codon = mutation_sequence[pos + i - 3 : pos + i]
                     # see if the codon is a stop codon 
                     if codon.upper() in ['TAA','TAG','TGA']: 
-                        print '\t\tNOTE:\tFrameshift mutation {}/{} in {} is generating the stop codon {}\n\t\t\tNo peptides generated from this mutation'.format(mutation_info.aa_normal, mutation_info.aa_mut, mutation_info.trans_id, codon)
+                        print('\t\tNOTE:\tFrameshift mutation {}/{} in {} is generating the stop codon {}\n\t\t\tNo peptides generated from this mutation'.format(mutation_info.aa_normal, mutation_info.aa_mut, mutation_info.trans_id, codon))
         pos = pos + 1
 
 
@@ -939,9 +945,9 @@ def peptide_mutation_position_annotation(mutpeps, long_peptide_position, peptide
 def peptide_selection (normpeps, mutpeps, peptide_mutation_position, intermediate_peptide_counters, peptide_sequence_info, peptide_info, mutation_info, p_length, reference_peptides):
 
     if len(peptide_sequence_info.mutation_sequence) < p_length:
-        print '\t\tNOTE:\tMutation peptide sequence {} length is smaller than defined peptide length {}'.format(peptide_sequence_info.mutation_sequence, p_length)
+        print('\t\tNOTE:\tMutation peptide sequence {} length is smaller than defined peptide length {}'.format(peptide_sequence_info.mutation_sequence, p_length))
 
-    for normpep, mutpep, mutpos in izip(normpeps, mutpeps, peptide_mutation_position):
+    for normpep, mutpep, mutpos in zip(normpeps, mutpeps, peptide_mutation_position):
         if '*' in normpep or '*' in mutpep : # removing peptides from pseudogenes including a *
             intermediate_peptide_counters['peptide_removal_count'] += 1
             continue
@@ -1428,7 +1434,7 @@ def state_allele_frequency(allele_fractions, mutation_info):
             allele_frequency = allele_fractions[allele_fraction_id]
         else: 
             allele_frequency = 0
-            print '\tAllele frequency for id {} not found; annotated as 0'.format(allele_fraction_id)
+            print('\tAllele frequency for id {} not found; annotated as 0'.format(allele_fraction_id))
     else:
         allele_frequency = 1
 
@@ -1646,12 +1652,12 @@ def webserver_print_output(webserver, www_tmp_dir, output, logfile, fasta_file_n
 
        os.system('cat {}/{}'.format(www_tmp_dir,logfile)) 
 
-       print '\n-------------------------------------------------------------\n'
+       print('\n-------------------------------------------------------------\n')
 
-       print '\nLink to MuPeXI output file <a href="/services/MuPeXI-1.1/tmp/{}/{}">MuPeXI.out</a>\n'.format(dir_name, output)
-       print 'Link to MuPeXI log file <a href="/services/MuPeXI-1.1/tmp/{}/{}">MuPeXI.log</a>\n'.format(dir_name, logfile)
+       print('\nLink to MuPeXI output file <a href="/services/MuPeXI-1.1/tmp/{}/{}">MuPeXI.out</a>\n'.format(dir_name, output))
+       print('Link to MuPeXI log file <a href="/services/MuPeXI-1.1/tmp/{}/{}">MuPeXI.log</a>\n'.format(dir_name, logfile))
        if not fasta_file_name == None:
-          print 'Link to Fasta file with peptide info <a href="/usr/opt/www/pub/CBS/services/MuPeXI-1.1/tmp/{}/{}">Fasta file</a>\n'.format(dir_name, fasta_file_name)
+          print('Link to Fasta file with peptide info <a href="/usr/opt/www/pub/CBS/services/MuPeXI-1.1/tmp/{}/{}">Fasta file</a>\n'.format(dir_name, fasta_file_name))
 
 
 
@@ -1721,7 +1727,7 @@ def usage():
 
         REMEMBER to state references in the config.ini file
         """
-    print(usage.format(call = sys.argv[0], path = '/'.join(sys.argv[0].split('/')[0:-1]) ))
+    print((usage.format(call = sys.argv[0], path = '/'.join(sys.argv[0].split('/')[0:-1]) )))
 
 
 
@@ -1731,9 +1737,9 @@ def read_options(argv):
             'v:a:l:o:d:L:e:c:p:E:m:A:F:s:nftMwgh', 
             ['input-file=', 'alleles=', 'length=', 'output-file=', 'out-dir=', 'log-file=', 'expression-file=', 'config-file=', 'prefix=', 'expression-type=', 'mismatch-number=','assembly=', 'fork=','species=', 'netmhc-full-anal', 'make-fasta', 'keep-temp', 'mismatch-print', 'webserver', 'liftover','help'])
         if not optlist:
-            print 'No options supplied'
+            print('No options supplied')
             usage()
-    except getopt.GetoptError, e:
+    except getopt.GetoptError as e:
         usage(); sys.exit(e)
 
     # Create dictionary of long and short formats 
@@ -1765,41 +1771,41 @@ def read_options(argv):
     opts = dict(optlist)
 
     # Use the long format dictionary to change the option to the short annotation, if long is given by the user.
-    for short, long_ in format_dict.iteritems():
+    for short, long_ in six.iteritems(format_dict):
         if long_ in opts:
             opts[short] = opts.pop(long_)
 
     # Print usage help 
-    if '-h' in opts.keys():
+    if '-h' in list(opts.keys()):
         usage(); sys.exit()
 
     # Define values 
-    vcf_file = opts['-v'] if '-v' in opts.keys() else None
+    vcf_file = opts['-v'] if '-v' in list(opts.keys()) else None
     if vcf_file == None :
         usage(); sys.exit('Input VCF file is missing!')
-    peptide_length = opts['-l'] if '-l' in opts.keys() else 9
+    peptide_length = opts['-l'] if '-l' in list(opts.keys()) else 9
     if peptide_length < 0:
         usage(); sys.exit('Length of peptides should be positive!')
-    expression_file = opts['-e'] if '-e' in opts.keys() else None
-    expression_type = opts['-E'] if '-E' in opts.keys() else 'transcript'
-    webserver = opts['-w'] if '-w' in opts.keys() else None
-    prefix = opts['-p'] if '-p' in opts.keys() else vcf_file.split('/')[-1].split('.')[0]
-    output = opts['-o'] if '-o' in opts.keys() else prefix + '.mupexi'
-    outdir = opts['-d'] if '-d' in opts.keys() else os.getcwd()
-    logfile = opts['-L'] if '-L' in opts.keys() else prefix + '.log'
-    config = opts['-c'] if '-c' in opts.keys() else '/'.join(sys.argv[0].split('/')[0:-1]) +'/config.ini'
-    fasta_file_name = prefix + '.fasta' if '-f' in opts.keys() else None
-    keep_temp = 'yes' if '-t' in opts.keys() else None
-    HLA_alleles = opts['-a'] if '-a' in opts.keys() else 'HLA-A02:01'
-    print_mismatch = 'Yes' if '-M' in opts.keys() else None
-    liftover = 'Yes' if '-g' in opts.keys() else None
-    num_mismatches = opts['-m'] if '-m' in opts.keys() else 4
-    assembly = opts['-A'] if '-A' in opts.keys() else None
-    fork = opts['-F'] if '-F' in opts.keys() else 2
+    expression_file = opts['-e'] if '-e' in list(opts.keys()) else None
+    expression_type = opts['-E'] if '-E' in list(opts.keys()) else 'transcript'
+    webserver = opts['-w'] if '-w' in list(opts.keys()) else None
+    prefix = opts['-p'] if '-p' in list(opts.keys()) else vcf_file.split('/')[-1].split('.')[0]
+    output = opts['-o'] if '-o' in list(opts.keys()) else prefix + '.mupexi'
+    outdir = opts['-d'] if '-d' in list(opts.keys()) else os.getcwd()
+    logfile = opts['-L'] if '-L' in list(opts.keys()) else prefix + '.log'
+    config = opts['-c'] if '-c' in list(opts.keys()) else '/'.join(sys.argv[0].split('/')[0:-1]) +'/config.ini'
+    fasta_file_name = prefix + '.fasta' if '-f' in list(opts.keys()) else None
+    keep_temp = 'yes' if '-t' in list(opts.keys()) else None
+    HLA_alleles = opts['-a'] if '-a' in list(opts.keys()) else 'HLA-A02:01'
+    print_mismatch = 'Yes' if '-M' in list(opts.keys()) else None
+    liftover = 'Yes' if '-g' in list(opts.keys()) else None
+    num_mismatches = opts['-m'] if '-m' in list(opts.keys()) else 4
+    assembly = opts['-A'] if '-A' in list(opts.keys()) else None
+    fork = opts['-F'] if '-F' in list(opts.keys()) else 2
     if int(fork) <= 1:
         usage(); sys.exit('VEP fork number must be greater than 1')
-    species = opts['-s'] if '-s' in opts.keys() else 'human'
-    netmhc_anal = 'yes' if '-n' in opts.keys() else None
+    species = opts['-s'] if '-s' in list(opts.keys()) else 'human'
+    netmhc_anal = 'yes' if '-n' in list(opts.keys()) else None
 
     # Create and fill input named-tuple
     Input = namedtuple('input', ['vcf_file', 'peptide_length', 'output', 'logfile', 'HLA_alleles', 'config', 'expression_file', 'fasta_file_name', 'webserver', 'outdir', 'keep_temp', 'prefix', 'print_mismatch', 'liftover', 'expression_type', 'num_mismatches', 'assembly', 'fork', 'species','netmhc_anal'])
