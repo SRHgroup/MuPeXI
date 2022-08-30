@@ -5,7 +5,7 @@ MuPeXI - Mutant peptide extractor and Informer
 Date: 2015-09-03
 By: Anne-Mette Bjerregaard
 MuPeXI.py extracts user defined peptides lengths around missense variant mutations, indels and frameshifts.
-Information from each mutation is annotated together with the mutant and normal peptides in the file output. 
+Information from each mutation is annotated together with the mutant and normal peptides in the file output.
 """
 
 # Import modules
@@ -17,7 +17,6 @@ from six.moves import map
 from six.moves import range
 
 from Bio.Seq import Seq
-from Bio.Alphabet import generic_dna
 from Bio import BiopythonWarning
 from six.moves.configparser import SafeConfigParser
 from tempfile import NamedTemporaryFile
@@ -34,17 +33,17 @@ def main(args):
     input_ = read_options(args)
     version = '1.2.0'
 
-    # Redirect std error when run on webserver 
+    # Redirect std error when run on webserver
     webserver_err_redirection(input_.webserver)
 
-    # Check input file paths 
+    # Check input file paths
     species = define_species(input_.species)
     peptide_length = extract_peptide_length(input_.peptide_length)
     paths = check_input_paths(input_, peptide_length, species)
     tmp_dir = create_tmp_dir()
     www_tmp_dir = create_webserver_tmp_dir(input_.webserver)
 
-    # Read in data 
+    # Read in data
     print_ifnot_webserver('\nReading in data', input_.webserver)
     expression = build_expression(input_.expression_file, input_.webserver, input_.expression_type, species)
     proteome_reference, sequence_count = build_proteome_reference(paths.proteome_ref_file, input_.webserver, species)
@@ -83,14 +82,14 @@ def main(args):
                                                                 input_.webserver, input_.keep_temp, input_.prefix,
                                                                 input_.outdir, input_.config)
 
-    # extract mutant peptides 
+    # extract mutant peptides
     peptide_info, peptide_counters, fasta_printout, \
     pepmatch_file_names = peptide_extraction(peptide_length, vep_info, proteome_reference, genome_reference,
                                              reference_peptides, reference_peptide_file_names, input_.fasta_file_name,
                                              paths.peptide_match, tmp_dir, input_.webserver, input_.print_mismatch,
                                              input_.keep_temp, input_.prefix, input_.outdir, input_.num_mismatches)
 
-    # print fasta file 
+    # print fasta file
     fasta_file = write_fasta(tmp_dir, fasta_printout, input_.webserver)
 
     end_time_mupex = datetime.now()
@@ -139,13 +138,13 @@ def check_input_paths(input_, peptide_lengths, species):
     file_names = defaultdict(dict)  # empty dictionary
     category_list, id_list = create_lits_for_path_checkup(peptide_lengths)
 
-    # parse files stated in config file 
+    # parse files stated in config file
     for category, ID in zip(category_list, id_list):
         file_path = config_parse(input_.config, category, ID)
         check_path(file_path)
         file_names[ID] = file_path
 
-    # Exit program if genome or proteome reference is not stated 
+    # Exit program if genome or proteome reference is not stated
     if file_names['cDNA'] is None:
         usage();
         sys.exit('cDNA reference file is missing!')
@@ -180,7 +179,7 @@ def create_lits_for_path_checkup(peptide_lengths):
 
 
 def config_parse(config_file, category, ID):
-    # check if config.ini file exists 
+    # check if config.ini file exists
     if not os.path.exists(config_file):
         usage();
         sys.exit(
@@ -204,7 +203,7 @@ def check_path(path):
 def check_vcf_file(vcf_file, liftover, species, webserver):
     check_path(vcf_file)
 
-    # Exit program if file size are exceeded 
+    # Exit program if file size are exceeded
     check_file_size(webserver, vcf_file, 'VCF file')
 
     with open(vcf_file) as f:
@@ -281,7 +280,7 @@ def webserver_err_redirection(webserver):
 
 
 def print_mem_usage():
-    # total memory usage 
+    # total memory usage
     process = psutil.Process(os.getpid())
     process_mb = float(process.memory_info().rss / 1000000)
     print('Total mem usage: {} MB'.format(process_mb))
@@ -300,7 +299,7 @@ def build_proteome_reference(proteome_ref_file, webserver, species):
     with open(proteome_ref_file) as f:
         for line in f.readlines():
             if line.startswith('>'):  # fasta header (>)
-                # test species compatibility 
+                # test species compatibility
                 if not species.gene_id_prefix in line:
                     usage();
                     sys.exit(
@@ -326,7 +325,7 @@ def build_genome_reference(genome_ref_file, webserver, species):
     with open(genome_ref_file) as f:
         for line in f.readlines():
             if line.startswith('>'):  # fasta header (>)
-                # test species compatibility 
+                # test species compatibility
                 if not species.gene_id_prefix in line:
                     usage();
                     sys.exit(
@@ -360,7 +359,7 @@ def build_expression(expression_file, webserver, expression_type, species):
                     else:  # example: ENST00000415118
                         ensembl_id = line[0]
                     mean = line[1]
-                    # fill dictionary 
+                    # fill dictionary
                     expression[ensembl_id] = mean
     else:
         expression = None
@@ -445,6 +444,7 @@ def extract_peptide_length(peptide_length):
             peptide_length_list = list(map(int, peptide_length.split(',')))
         else:
             peptide_length_list.append(int(peptide_length))
+
     return peptide_length_list
 
 
@@ -488,7 +488,7 @@ def liftover_hg19(liftover, webserver, vcf_file, keep_tmp, outdir, file_prefix, 
         vcf_liftover_file = NamedTemporaryFile(delete=False, dir=tmp_dir, suffix='.vcf')
         rejected_records_file = NamedTemporaryFile(delete=False, dir=tmp_dir, suffix='.vcf')
 
-        # Run picard tools lift-over - only on web-server. 
+        # Run picard tools lift-over - only on web-server.
         p1 = subprocess.Popen([java8, '-jar', '{}/picard.jar'.format(picard_path), 'LiftoverVcf',
                                'I={}'.format(vcf_file),
                                'O={}'.format(vcf_liftover_file.name),
@@ -500,7 +500,7 @@ def liftover_hg19(liftover, webserver, vcf_file, keep_tmp, outdir, file_prefix, 
         output, error = p1.communicate()
         vcf_liftover_file.close()
 
-        # Test if VEP file is empty 
+        # Test if VEP file is empty
         if os.stat(vcf_liftover_file.name).st_size <= 23000:
             sys.exit('ERROR: Liftover non fuctioning \nLiftOver {}'.format(error))
 
@@ -613,7 +613,7 @@ def run_vep(vcf_sorted_file, webserver, tmp_dir, vep_path, vep_dir, keep_tmp, fi
     output, error = p1.communicate()
     vep_file.close()
 
-    # Test if VEP file is empty 
+    # Test if VEP file is empty
     if os.stat(vep_file.name).st_size == 0:
         print(('\nERROR:\tVEP output file empty\nVEP:\t{}'.format(error)))
         if "use an undefined value as a symbol reference at" in error:
@@ -629,7 +629,7 @@ def build_vep_info(vep_file, webserver):
     print_ifnot_webserver('\tCreating mutation information dictionary', webserver)
     vep_info = []  # empty list
     previous_mutation_id = previous_mutation_id_vep = ''  # empty string
-    # Creating named tuple 
+    # Creating named tuple
     Mutation_Info = namedtuple('mutation_info',
                                ['gene_id', 'trans_id', 'mutation_consequence', 'chr', 'pos', 'cdna_pos', 'prot_pos',
                                 'prot_pos_to', 'aa_normal', 'aa_mut', 'codon_normal', 'codon_mut', 'alt_allele',
@@ -656,7 +656,7 @@ def build_vep_info(vep_file, webserver):
             if 'stop' in line:
                 continue
             line = line.split('\t')
-            # save relevant information from line 
+            # save relevant information from line
             mutation_consequence = line[6].split(',')[0].strip()
             chr_, genome_pos = line[1].split(':')
             alt_allele = line[2].strip()
@@ -674,16 +674,16 @@ def build_vep_info(vep_file, webserver):
                 prot_pos, prot_pos_to = line[9].strip(), None
             mutation_id_vep = '{}_{}_{}/{}'.format(chr_, genome_pos, aa_normal, aa_mutation)
             # Generate dict of dicts (dependent on both mutation ID and gene ID)
-            # then set the default value of the key to be a list and append the transcript id 
+            # then set the default value of the key to be a list and append the transcript id
             transcript_info[mutation_id_vep].setdefault(geneID, []).append(transID)
             # ad protein position
             protein_positions[mutation_id_vep][geneID][transID] = prot_pos
-            # append information from the line to the list of named tuples - fill tuple 
+            # append information from the line to the list of named tuples - fill tuple
             vep_info.append(
                 Mutation_Info(geneID, transID, mutation_consequence, chr_, genome_pos, cdna_pos, int(prot_pos),
                               prot_pos_to, aa_normal, aa_mutation, codon_normal, codon_mut, alt_allele, symbol))
 
-            # count independent mutation mutation consequences 
+            # count independent mutation mutation consequences
             if (not mutation_id_vep == previous_mutation_id_vep) and mutation_consequence == 'missense_variant':
                 misssense_variant_count += 1
             if (not mutation_id_vep == previous_mutation_id_vep) and mutation_consequence == 'inframe_insertion':
@@ -730,7 +730,7 @@ def reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir, we
     reference_peptide_count = 0
     reference_peptide_file_names = defaultdict(dict)  # empty dictionary
 
-    # loop trough the proteome reference and chop up in all peptides 
+    # loop trough the proteome reference and chop up in all peptides
     for length in peptide_length:
         # check if peptide references are stated in config file
         reference_peptide_file_path = config_parse(config_file, 'References', 'pep' + str(length))
@@ -763,7 +763,7 @@ def reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir, we
                         reference_peptide_count += 1
                         reference_length_peptides.add(pep)
                         reference_peptides.add(pep)
-            reference_peptides_file.write('{}\n'.format('\n'.join(reference_length_peptides)))
+            reference_peptides_file.write(str.encode('{}\n'.format('\n'.join(reference_length_peptides))))
             reference_peptides_file.close()
             reference_peptide_file_names[length] = reference_peptides_file
 
@@ -798,10 +798,10 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
     for p_length in peptide_lengths:
         mutated_peptides_missing_normal = set()
         for mutation_info in vep_info:
-            # create mutation counters 
+            # create mutation counters
             intermediate_peptide_counters = {'mutation_peptide_count': 0, 'mutation_normal_match_count': 0,
                                              'peptide_removal_count': 0}
-            # extract sequence 
+            # extract sequence
             peptide_sequence_info = mutation_sequence_creation(mutation_info, proteome_reference, genome_reference,
                                                                p_length)
             if peptide_sequence_info is not None:
@@ -822,7 +822,7 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
                                                                                 mutated_peptides_missing_normal,
                                                                                 mutpeps, mutation_info)
 
-            # Accumulate counters 
+            # Accumulate counters
             peptide_count += intermediate_peptide_counters['mutation_peptide_count']
             normal_match_count += intermediate_peptide_counters['mutation_normal_match_count']
             removal_count += intermediate_peptide_counters['peptide_removal_count']
@@ -833,7 +833,7 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
                                                                       pepmatch_file_names, webserver, print_mismatch,
                                                                       num_mismatches)
 
-    # Create and fill counter named-tuple 
+    # Create and fill counter named-tuple
     PeptideCounters = namedtuple('peptide_counters', ['peptide_count', 'normal_match_count', 'removal_count'])
     peptide_counters = PeptideCounters(peptide_count, normal_match_count, removal_count)
 
@@ -842,7 +842,7 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
     return peptide_info, peptide_counters, fasta_printout, pepmatch_file_names
 
 
-# peptide_extraction 
+# peptide_extraction
 def mutation_sequence_creation(mutation_info, proteome_reference, genome_reference, peptide_length):
     # Create empty named tuple
     PeptideSequenceInfo = namedtuple('peptide_sequence_info',
@@ -963,11 +963,11 @@ def frame_shift_peptide(genome_reference, proteome_reference, mutation_info, pep
     detect_stop_codon(mutation_sequence, mutation_info)
 
     # BIO PYTHON:
-    # ignore biopython warnings (as we intentionally create sequences not multiple by three) 
+    # ignore biopython warnings (as we intentionally create sequences not multiple by three)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', BiopythonWarning)
-        # When mutation sequence is obtained, translate the sequence using biopython 
-        dna_sequence = Seq(mutation_sequence, generic_dna)
+        # When mutation sequence is obtained, translate the sequence using biopython
+        dna_sequence = Seq(mutation_sequence)#, generic_dna)
         mutation_aaseq = str(dna_sequence.translate(to_stop=True))
 
     chop_normal_sequence = '-' * len(mutation_aaseq)
@@ -983,14 +983,14 @@ def detect_stop_codon(mutation_sequence, mutation_info):
     # check if the mutation generates a stop-codon
     pos = 1
     for nucleotide in mutation_sequence:
-        # find the mutation - annotated with lowercase 
+        # find the mutation - annotated with lowercase
         if nucleotide.islower():
             for i in [0, 1, 2]:
-                # i identify if codon is within the reading frame 
+                # i identify if codon is within the reading frame
                 codon_value = float(pos + i - 3) / 3
                 if codon_value.is_integer():
                     codon = mutation_sequence[pos + i - 3: pos + i]
-                    # see if the codon is a stop codon 
+                    # see if the codon is a stop codon
                     if codon.upper() in ['TAA', 'TAG', 'TGA']:
                         print(
                             '\t\tNOTE:\tFrameshift mutation {}/{} in {} is generating the stop codon '
@@ -1052,7 +1052,7 @@ def peptide_selection(normpeps, mutpeps, peptide_mutation_position, intermediate
 
         pep_match_info = None  # empty variable
 
-        # fill dictionary 
+        # fill dictionary
         peptide_info[mutpep][normpep] = [mutation_info, peptide_sequence_info, mutpos, pep_match_info]
 
     return peptide_info, intermediate_peptide_counters
@@ -1073,7 +1073,7 @@ def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, pe
                               webserver, print_mismatch, num_mismatches):
     # write input file
     mutpeps_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
-    mutpeps_file.write('{}\n'.format('\n'.join(mutated_peptides_missing_normal)))
+    mutpeps_file.write(str.encode('{}\n'.format('\n'.join(mutated_peptides_missing_normal))))
     mutpeps_file.close()
 
     pepmatch_file = run_peptide_match(mutpeps_file, peptide_length, peptide_match, reference_peptide_file_names,
@@ -1086,7 +1086,7 @@ def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, pe
         assert mutated_peptide in peptide_info, 'Mutated peptide "{}" not stated in peptide_info data structure'.format(
             mutated_peptide)
         for normal_peptide in peptide_info[mutated_peptide].keys():
-            # renaming normal key, thereby inserting the normal peptide 
+            # renaming normal key, thereby inserting the normal peptide
             peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide] = peptide_info[
                 mutated_peptide].pop(normal_peptide)
             peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide][3] = pep_match[mutated_peptide]
@@ -1136,7 +1136,7 @@ def build_pepmatch(pepmatch_file, peptide_length, print_mismatch):
                 mismatch = 5
             else:
                 continue
-            # create named tuple 
+            # create named tuple
             PepMatchInfo = namedtuple('pep_match_info', ['normal_peptide', 'mismatch', 'mismatch_peptide'])
             pep_match_info = PepMatchInfo(normal_peptide, int(mismatch), mismatch_peptide)
             # fill dictionary
@@ -1174,7 +1174,7 @@ def find_codon_position(codon, frame_type):
 
 # missense_variant_peptide / insertion_peptide / deletion_peptide / frame_shift_peptide
 def reference_assertion(reference, mutation_info, reference_type):
-    # Check gene id and transcript id exists in proteome_reference dictionary 
+    # Check gene id and transcript id exists in proteome_reference dictionary
     assert mutation_info.gene_id in reference, '{gene_id}: This gene is not in the reference gene set. Check that ' \
                                                'you have used the right reference corresponding ' \
                                                'to the one used when running VEP'.format(
@@ -1211,7 +1211,7 @@ def write_fasta(tmp_dir, fasta_printout, webserver):
         print_ifnot_webserver('\tWriting Fasta file', webserver)
         fasta_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
         for header in fasta_printout:
-            fasta_file.write('{Header}\n{Sequence}\n'.format(Header=header, Sequence=fasta_printout[header]))
+            fasta_file.write(str.encode('{Header}\n{Sequence}\n'.format(Header=header, Sequence=fasta_printout[header])))
         fasta_file.close()
     else:
         fasta_file = None
@@ -1236,9 +1236,9 @@ def write_peptide_file(peptide_info, tmp_dir, webserver, keep_tmp, file_prefix, 
         for normal_peptide in peptide_info[mutant_petide]:
             peptides.add(normal_peptide)
 
-    # write temporary peptide file 
+    # write temporary peptide file
     peptide_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
-    peptide_file.write('{}\n'.format('\n'.join(peptides)))
+    peptide_file.write(str.encode('{}\n'.format('\n'.join(peptides))))
     peptide_file.close()
 
     keep_temp_file(keep_tmp, 'txt', peptide_file.name, file_prefix, outdir, None, 'peptide_netMHCinput')
@@ -1248,7 +1248,7 @@ def write_peptide_file(peptide_info, tmp_dir, webserver, keep_tmp, file_prefix, 
 
 def run_netMHCpan(HLA_alleles, netMHCpan_path, peptide_file, tmp_dir, webserver, keep_tmp, file_prefix, outdir,
                   netmhc_anal):
-    # isolate unique HLAalleles 
+    # isolate unique HLAalleles
     unique_alleles_set = set(HLA_alleles.split(','))
     unique_alleles = ','.join(map(str, unique_alleles_set))
 
@@ -1262,7 +1262,7 @@ def run_netMHCpan(HLA_alleles, netMHCpan_path, peptide_file, tmp_dir, webserver,
     netMHC_EL_file.close()
     keep_temp_file(keep_tmp, 'txt', netMHC_EL_file.name, file_prefix, outdir, None, 'netMHCpan_EL')
 
-    # running binding affinity prediction if user specified all analysis 
+    # running binding affinity prediction if user specified all analysis
     if netmhc_anal is not None:
         netMHC_BA_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
         print_ifnot_webserver('\tRunning NetMHCpan binding affinity prediction', webserver)
@@ -1284,11 +1284,11 @@ def build_netMHC(netMHC_file, webserver, affinity):
     net_mhc = defaultdict(dict)  # empty dictionary
     NetMHCInfo = namedtuple('NetMHCInfo', ['affinity', 'rank', 'score'])
 
-    # Account for different column output between netMHCpan output when running affinity predictions or not 
+    # Account for different column output between netMHCpan output when running affinity predictions or not
     af = 12 if affinity == 'YES' else None
     r = 13 if affinity == 'YES' else 12
 
-    # Build dictionary 
+    # Build dictionary
     if netMHC_file is not None:
         with open(netMHC_file.name) as f:
             for line in f.readlines():
@@ -1319,7 +1319,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
     printed_ids = set()
     row = 0
 
-    # Create data frame 
+    # Create data frame
     if net_mhc_BA is None:
         df = pandas.DataFrame(columns=(
             'HLA_allele',
@@ -1379,17 +1379,17 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
             'Expression_score',
             'priority_Score'), )
 
-    # Extract data 
+    # Extract data
     for mutant_petide in peptide_info:
         for normal_peptide in peptide_info[mutant_petide]:
             for hla in unique_alleles.split(','):
-                # Checking concordance between MHC files  and intermediate peptide_info file 
+                # Checking concordance between MHC files  and intermediate peptide_info file
                 assert hla in net_mhc_EL, 'Allele "{}" not stated in NetMHCpan output'.format(hla)
                 assert mutant_petide in net_mhc_EL[hla], 'Mutant peptide "{}" not found in NetMHCpan output'.format(
                     mutant_petide)
                 assert normal_peptide in net_mhc_EL[hla], 'Normal peptide "{}" not found in NetMHCpan output'.format(
                     normal_peptide)
-                # save information tuples 
+                # save information tuples
                 mutation_info = peptide_info[mutant_petide][normal_peptide][0]
                 peptide_sequence_info = peptide_info[mutant_petide][normal_peptide][1]
                 mutant_netmhc_info = net_mhc_EL[hla][mutant_petide]
@@ -1413,12 +1413,12 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
                 # Extract protein position
                 protein_positions_extracted = extract_protein_position(transcript_ids, mutation_id_vep,
                                                                        mutation_info.gene_id, protein_positions)
-                # Extract expression value if file is given 
+                # Extract expression value if file is given
                 expression_sum = extract_expression_value(expression_file_type, expression, mutation_info.gene_id,
                                                           webserver,
                                                           transcript_info[mutation_id_vep][mutation_info.gene_id],
                                                           printed_ids)
-                # Extract cancer genes if file is given 
+                # Extract cancer genes if file is given
                 if not cancer_genes is None:
                     cancer_gene = 'Yes' if mutation_info.symbol in cancer_genes else 'No'
                 else:
@@ -1426,7 +1426,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
                 # Extract allele frequency (AF)
                 allele_frequency = state_allele_frequency(allele_fractions, mutation_info)
 
-                # calculate priority score 
+                # calculate priority score
                 priority_score, scores = score_creation(normal_netmhc_info.rank, mutant_netmhc_info.rank,
                                                         expression_sum, mutation_info.symbol, mismatches,
                                                         allele_frequency, reference_peptides, mutant_petide)
@@ -1458,7 +1458,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
                         scores.expression_score,
                         priority_score]
                 else:
-                    # Checking concordance between MHC files  and intermediate peptide_info file 
+                    # Checking concordance between MHC files  and intermediate peptide_info file
                     assert hla in net_mhc_BA, 'Allele "{}" not stated in NetMHCpan output'.format(hla)
                     assert mutant_petide in net_mhc_BA[hla], 'Mutant peptide "{}" not found in NetMHCpan output'.format(
                         mutant_petide)
@@ -1509,26 +1509,26 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL, unique_a
     df_sorted.loc[:, 'priority_Score'] = df_sorted.priority_Score.multiply(100).round().astype(int)
     df_sorted.loc[:, 'Mismatches'] = df_sorted.Mismatches.astype(int)
 
-    # Print data frame to intermediate file 
+    # Print data frame to intermediate file
     df_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
     df_sorted.to_csv(df_file.name, sep='\t', index=False)
     df_file.close()
 
-    # Print header to output file 
+    # Print header to output file
     header_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
     header = "# VERSION:\tMuPeXI {version}\n# CALL:\t\t{call}\n# DATE:\t\t{day} " \
              "{date} of {month} {year}\n# TIME:\t\t{print_time}\n# PWD:\t\t{pwd}\n"
-    header_file.write(header.format(version=version,
+    header_file.write(str.encode(header.format(version=version,
                                     call=' '.join(map(str, sys.argv)),
                                     day=datetime.now().strftime("%A"),
                                     month=datetime.now().strftime("%B"),
                                     year=datetime.now().strftime("%Y"),
                                     date=datetime.now().strftime("%d"),
                                     print_time=datetime.now().strftime("%T"),
-                                    pwd=os.getcwd()))
+                                    pwd=os.getcwd())))
     header_file.close()
 
-    # combining header and data frame file 
+    # combining header and data frame file
     output_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
     process_cat_files = subprocess.Popen(['cat', header_file.name, df_file.name], stdout=output_file)
     process_cat_files.communicate()
@@ -1612,7 +1612,7 @@ def score_creation(rank_normal, rank_mutant, expression_sum, gene_symbol, mismat
     expression = 0 if expression_sum is None else float(expression_sum)
     normal_match = 0 if mutant_petide in reference_peptides else 1
 
-    # define constants 
+    # define constants
     k_expression_adjustment = 0.1  #
     k_rank_adjustment = 0.5  #
 
@@ -1693,7 +1693,8 @@ def write_log_file(argv, peptide_length, sequence_count, reference_peptide_count
           MuPeI Runtime:                             {time_mupei}
           TOTAL Runtime:                             {time}
           """
-    log_file.write(log.format(version=version,
+    log_file.write(str.encode(
+        log.format(version=version,
                               call=' '.join(map(str, argv)),
                               sequence_count=sequence_count,
                               reference_peptide_count=reference_peptide_counters.total_peptide_count,
@@ -1723,14 +1724,14 @@ def write_log_file(argv, peptide_length, sequence_count, reference_peptide_count
                               date=datetime.now().strftime("%d"),
                               print_time=datetime.now().strftime("%T"),
                               pwd=os.getcwd()
-                              ))
+                              )))
     log_file.close()
     return log_file
 
 
 def move_output_files(outdir, log_file, logfile_name, fasta_file, fasta_file_name, output_file, output_file_name,
                       webserver, www_tmp_dir):
-    # moving output files to user defined dir or webserver dir  
+    # moving output files to user defined dir or webserver dir
     move_to_dir = outdir if webserver is None else www_tmp_dir
 
     shutil.move(log_file.name, '{}/{}'.format(move_to_dir, logfile_name))
@@ -1864,7 +1865,7 @@ def read_options(argv):
         usage();
         sys.exit(e)
 
-    # Create dictionary of long and short formats 
+    # Create dictionary of long and short formats
     format_dict = {
         '-h': '--help',
         '-v': '--vcf-file',
@@ -1897,20 +1898,20 @@ def read_options(argv):
         if long_ in opts:
             opts[short] = opts.pop(long_)
 
-    # Print usage help 
+    # Print usage help
     if '-h' in list(opts.keys()):
         usage();
         sys.exit()
 
-    # Define values 
+    # Define values
     vcf_file = opts['-v'] if '-v' in list(opts.keys()) else None
     if vcf_file is None:
         usage();
         sys.exit('Input VCF file is missing!')
     peptide_length = opts['-l'] if '-l' in list(opts.keys()) else 9
-    if peptide_length < 0:
-        usage();
-        sys.exit('Length of peptides should be positive!')
+    #if peptide_length < 0:
+    #    usage();
+    #    sys.exit('Length of peptides should be positive!')
     expression_file = opts['-e'] if '-e' in list(opts.keys()) else None
     expression_type = opts['-E'] if '-E' in list(opts.keys()) else 'transcript'
     webserver = opts['-w'] if '-w' in list(opts.keys()) else None
@@ -1951,3 +1952,4 @@ def read_options(argv):
 
 if __name__ == '__main__':
     main(sys.argv[1:])
+
