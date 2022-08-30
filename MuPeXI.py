@@ -262,7 +262,7 @@ def create_tmp_dir():
 
 
 def print_ifnot_webserver(string, webserver):
-    if webserver is not None:
+    if webserver is None:
         print(string)
 
 
