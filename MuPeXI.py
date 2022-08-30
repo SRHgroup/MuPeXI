@@ -18,7 +18,7 @@ from six.moves import range
 
 from Bio.Seq import Seq
 from Bio import BiopythonWarning
-from six.moves.configparser import SafeConfigParser
+from six.moves.configparser import ConfigParser
 from tempfile import NamedTemporaryFile
 import psutil
 import sys, re, getopt, itertools, warnings, string, subprocess, os.path, math, tempfile, shutil, numpy, pandas
@@ -186,7 +186,7 @@ def config_parse(config_file, category, ID):
             'ERROR: Path to OR config.ini does not exist!\nERROR: Use -c option to specify path/to/config.ini file\n')
 
     # parse config file
-    config = SafeConfigParser()
+    config = ConfigParser()
     config.read(config_file)
     path = os.path.expandvars(config.get(category, ID)) if config.has_option(category, ID) else None
 
