@@ -31,7 +31,7 @@ def main(args):
 
     # State input in variables
     input_ = read_options(args)
-    version = '1.2.0'
+    version = '2.0.0'
 
     # Redirect std error when run on webserver
     webserver_err_redirection(input_.webserver)
@@ -56,43 +56,78 @@ def main(args):
     Detecting vcf file input, extracting allele frequencies and running VEP
     """
     start_time_vep = datetime.now()
-    print_ifnot_webserver('\nVEP: Starting process for running the Ensembl Variant Effect Predictor', input_.webserver)
 
-    variant_caller = detect_variant_caller(input_.vcf_file, input_.webserver)
-    vcf_file = liftover_hg19(input_.liftover, input_.webserver, input_.vcf_file, input_.keep_temp, input_.outdir,
-                             input_.prefix, tmp_dir, input_.config)
-    vcf_sorted_file = create_vep_compatible_vcf(vcf_file, input_.webserver, input_.keep_temp, input_.outdir,
-                                                input_.prefix, tmp_dir, input_.liftover)
+    if input_.vcf_file is not None:
 
-    allele_fractions = extract_allele_frequency(vcf_sorted_file, input_.webserver, variant_caller)
-    vep_file = run_vep(vcf_sorted_file, input_.webserver, tmp_dir, paths.vep_path, paths.vep_dir, input_.keep_temp,
-                       input_.prefix, input_.outdir, input_.assembly, input_.fork, species)
-    vep_info, vep_counters, transcript_info, protein_positions = build_vep_info(vep_file, input_.webserver)
+        print_ifnot_webserver('\nVEP: Starting process for running the Ensembl Variant Effect Predictor',
+                              input_.webserver)
 
-    end_time_vep = datetime.now()
+        variant_caller = detect_variant_caller(input_.vcf_file, input_.webserver)
+        vcf_file = liftover_hg19(input_.liftover, input_.webserver, input_.vcf_file, input_.keep_temp, input_.outdir,
+                                 input_.prefix, tmp_dir, input_.config)
+        vcf_sorted_file = create_vep_compatible_vcf(vcf_file, input_.webserver, input_.keep_temp, input_.outdir,
+                                                    input_.prefix, tmp_dir, input_.liftover)
 
-    """
-    MuPeX: Mutant peptide extraction
-    Extracting user defined peptides lengths around missense variant mutations, indels and frameshifts
-    """
-    start_time_mupex = datetime.now()
-    print_ifnot_webserver('\nMuPeX: Starting mutant peptide extraction for SNV mutations', input_.webserver)
+        allele_fractions = extract_allele_frequency(vcf_sorted_file, input_.webserver, variant_caller)
+        vep_file = run_vep(vcf_sorted_file, input_.webserver, tmp_dir, paths.vep_path, paths.vep_dir, input_.keep_temp,
+                           input_.prefix, input_.outdir, input_.assembly, input_.fork, species)
+        vep_info, vep_counters, transcript_info, protein_positions = build_vep_info(vep_file, input_.webserver)
 
-    # Extract reference peptides
-    reference_peptides, reference_peptide_counters, \
-    reference_peptide_file_names = reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir,
-                                                                input_.webserver, input_.keep_temp, input_.prefix,
-                                                                input_.outdir, input_.config)
+        end_time_vep = datetime.now()
 
-    # extract mutant peptides
-    peptide_info, peptide_counters, fasta_printout, \
-    pepmatch_file_names = peptide_extraction(peptide_length, vep_info, proteome_reference, genome_reference,
-                                             reference_peptides, reference_peptide_file_names, input_.fasta_file_name,
-                                             paths.peptide_match, tmp_dir, input_.webserver, input_.print_mismatch,
-                                             input_.keep_temp, input_.prefix, input_.outdir, input_.num_mismatches)
+        """
+        MuPeX: Mutant peptide extraction
+        Extracting user defined peptides lengths around missense variant mutations, indels and frameshifts
+        """
+        start_time_mupex = datetime.now()
+        print_ifnot_webserver('\nMuPeX: Starting mutant peptide extraction for SNV mutations', input_.webserver)
 
-    # print fasta file
+        # Extract reference peptides
+        reference_peptides, reference_peptide_counters, \
+        reference_peptide_file_names = reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir,
+                                                                    input_.webserver, input_.keep_temp, input_.prefix,
+                                                                    input_.outdir, input_.config)
+
+        # extract mutant peptides
+        peptide_info, peptide_counters, fasta_printout, \
+        pepmatch_file_names = peptide_extraction(peptide_length, vep_info, proteome_reference, genome_reference,
+                                                 reference_peptides, reference_peptide_file_names,
+                                                 input_.fasta_file_name,
+                                                 paths.peptide_match, tmp_dir, input_.webserver, input_.print_mismatch,
+                                                 input_.keep_temp, input_.prefix, input_.outdir, input_.num_mismatches)
+
+        """
+        MuPeI: Mutant peptide Informer 
+        Information from each mutation is annotated together with the mutant and normal peptides in the file output
+        """
+        start_time_mupei = datetime.now()
+        print_ifnot_webserver('\nMuPeI: Starting mutant peptide informer', input_.webserver)
+
+        # run netMHCpan
+        unique_mutant_peptide_count, peptide_file = write_peptide_file(peptide_info, tmp_dir, input_.webserver,
+                                                                       input_.keep_temp, input_.prefix, input_.outdir)
+        netMHCpan_runtime, unique_alleles, \
+        netMHC_EL_file, netMHC_BA_file = run_netMHCpan(input_.HLA_alleles, paths.netMHC, peptide_file, tmp_dir,
+                                                       input_.webserver, input_.keep_temp, input_.prefix,
+                                                       input_.outdir, input_.netmhc_anal)
+        net_mhc_BA = build_netMHC(netMHC_BA_file, input_.webserver, 'YES') if not netMHC_BA_file is None else None
+        net_mhc_EL = build_netMHC(netMHC_EL_file, input_.webserver, 'NO')
+
+        # write files
+        output_file = write_output_file(peptide_info=peptide_info, expression=expression, net_mhc_BA=net_mhc_BA,
+                                        net_mhc_EL=net_mhc_EL, unique_alleles=unique_alleles, cancer_genes=cancer_genes,
+                                        tmp_dir=tmp_dir, webserver=input_.webserver,
+                                        print_mismatch=input_.print_mismatch,
+                                        allele_fractions=allele_fractions, expression_file_type=input_.expression_type,
+                                        transcript_info=transcript_info, reference_peptides=reference_peptides,
+                                        proteome_reference=proteome_reference, protein_positions=protein_positions,
+                                        version=version, mode='SNV')
+
+        if 'fus_fasta_printout' not in locals(): fus_fasta_printout = {}
+
+        # print fasta file
     if input_.fusion_file is not None:
+
         print_ifnot_webserver('\nMuPeX: Starting mutant peptide extraction for fusion mutations', input_.webserver)
 
         fus_info, fus_transcript_info, fus_counter = build_fusion_info(fusion_file=input_.fusion_file,
@@ -107,40 +142,8 @@ def main(args):
             tmp_dir=tmp_dir, webserver=None, keep_tmp=True, file_prefix=input_.prefix,
             outdir=input_.outdir)
 
-        fasta_printout.update(fus_fasta_printout)
         # peptide_info.update(fus_peptide_info)
 
-    fasta_file = write_fasta(tmp_dir, fasta_printout, input_.webserver)
-
-    end_time_mupex = datetime.now()
-
-    """
-    MuPeI: Mutant peptide Informer 
-    Information from each mutation is annotated together with the mutant and normal peptides in the file output
-    """
-    start_time_mupei = datetime.now()
-    print_ifnot_webserver('\nMuPeI: Starting mutant peptide informer', input_.webserver)
-
-    # run netMHCpan
-    unique_mutant_peptide_count, peptide_file = write_peptide_file(peptide_info, tmp_dir, input_.webserver,
-                                                                   input_.keep_temp, input_.prefix, input_.outdir)
-    netMHCpan_runtime, unique_alleles, \
-    netMHC_EL_file, netMHC_BA_file = run_netMHCpan(input_.HLA_alleles, paths.netMHC, peptide_file, tmp_dir,
-                                                   input_.webserver, input_.keep_temp, input_.prefix,
-                                                   input_.outdir, input_.netmhc_anal)
-    net_mhc_BA = build_netMHC(netMHC_BA_file, input_.webserver, 'YES') if not netMHC_BA_file is None else None
-    net_mhc_EL = build_netMHC(netMHC_EL_file, input_.webserver, 'NO')
-
-    # write files
-    output_file = write_output_file(peptide_info=peptide_info, expression=expression, net_mhc_BA=net_mhc_BA,
-                                    net_mhc_EL=net_mhc_EL, unique_alleles=unique_alleles, cancer_genes=cancer_genes,
-                                    tmp_dir=tmp_dir, webserver=input_.webserver, print_mismatch=input_.print_mismatch,
-                                    allele_fractions=allele_fractions, expression_file_type=input_.expression_type,
-                                    transcript_info=transcript_info, reference_peptides=reference_peptides,
-                                    proteome_reference=proteome_reference, protein_positions=protein_positions,
-                                    version=version, mode='SNV')
-
-    if input_.fusion_file is not None:
         unique_fus_mutant_peptide_count, fus_peptide_file = write_peptide_file(peptide_info=fus_peptide_info,
                                                                                tmp_dir=tmp_dir,
                                                                                webserver=input_.webserver,
@@ -168,15 +171,26 @@ def main(args):
                                             tmp_dir=tmp_dir, webserver=input_.webserver, print_mismatch=None,
                                             allele_fractions=None,
                                             expression_file_type=input_.expression_type,
-                                            transcript_info=transcript_info,
+                                            transcript_info=fus_transcript_info,
                                             reference_peptides=None, proteome_reference=None, protein_positions=None,
                                             version=version, mode='FUS')
 
+        if 'fasta_printout' not in locals(): fasta_printout = {}
 
-    log_file = write_log_file(sys.argv, peptide_length, sequence_count, reference_peptide_counters, vep_counters,
-                              peptide_counters, start_time_mupex, start_time_mupei, start_time, end_time_mupex,
-                              input_.HLA_alleles, netMHCpan_runtime, unique_mutant_peptide_count,
-                              unique_alleles, tmp_dir, input_.webserver, version)
+    fasta_printout.update(fus_fasta_printout)
+
+    fasta_file = write_fasta(tmp_dir, fasta_printout, input_.webserver)
+
+    end_time_mupex = datetime.now()
+
+    try:
+        log_file = write_log_file(sys.argv, peptide_length, sequence_count, reference_peptide_counters, vep_counters,
+                                  # gotta make this possible for fusion onlys
+                                  peptide_counters, start_time_mupex, start_time_mupei, start_time, end_time_mupex,
+                                  input_.HLA_alleles, netMHCpan_runtime, unique_mutant_peptide_count,
+                                  unique_alleles, tmp_dir, input_.webserver, version)
+    except:
+        log_file = None
 
     output_files = {None if input_.vcf_file is None else output_file: '{}_snv.mupexi'.format(input_.prefix),
                     None if input_.fusion_file is None else fus_output_file: '{}_fus.mupexi'.format(input_.prefix)}
@@ -232,7 +246,9 @@ def check_input_paths(input_, peptide_lengths, species):
         check_path(input_.expression_file)
         check_file_size(input_.webserver, input_.expression_file, 'expression file')
 
-    check_vcf_file(input_.vcf_file, input_.liftover, species, input_.webserver)
+    if input_.vcf_file is not None:  # gotta create check_fusion_file too
+        check_vcf_file(input_.vcf_file, input_.liftover, species, input_.webserver)
+
     check_netMHC_path(file_names['MHC'])
     check_path(input_.outdir)
 
@@ -801,7 +817,7 @@ def build_vep_info(vep_file, webserver):
 
 
 def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, junction_filter=3, spanning_filter=1):
-    if discarded_fusion_file is not None:
+    if discarded_fusion_file is not None:  # should be if else with discarded read by default, and second option for star-fusion outs
         fus_df = pandas.concat([read_dataset(fusion_file, index_col=None),
                                 read_dataset(discarded_fusion_file, index_col=None)], axis=0)
     else:
@@ -810,7 +826,8 @@ def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, juncti
     fus_df = fus_df.query('peptide_sequence.notna()', engine='python')  ### warning ###
     fus_df['split_reads'] = fus_df['split_reads1'] + fus_df['split_reads2']
 
-    fus_df = fus_df[(fus_df['discordant_mates'] > spanning_filter) & (fus_df['split_reads'] > junction_filter)]
+    fus_df = fus_df[((fus_df['discordant_mates'] > spanning_filter) & (fus_df['split_reads'] > junction_filter)) |
+                    (fus_df['confidence'].isin(['medium', 'high']))]
 
     fus_info = []  # empty list
     # Creating named tuple
@@ -853,7 +870,7 @@ def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, juncti
         fus_transcript_info[fusion_id].setdefault('{}|{}'.format(geneID1, geneID2), []).append([transID1, transID1])
 
     if not fus_info:
-        print_ifnot_webserver('\nNO RELEVANT FUSIONS found')
+        print_ifnot_webserver('\nNO RELEVANT FUSIONS found', webserver=webserver)
 
     fus_counter = fus_df['reading_frame'].value_counts().to_dict()
 
@@ -2016,7 +2033,8 @@ def move_output_files(outdir, log_file, logfile_name, fasta_file, fasta_file_nam
     # moving output files to user defined dir or webserver dir
     move_to_dir = outdir if webserver is None else www_tmp_dir
 
-    shutil.move(log_file.name, '{}/{}'.format(move_to_dir, logfile_name))
+    if log_file is not None:
+        shutil.move(log_file.name, '{}/{}'.format(move_to_dir, logfile_name))
 
     for file, output_file_name in output_files.items():
         if file is None:
@@ -2198,12 +2216,18 @@ def read_options(argv):
 
     # Define values
     vcf_file = opts['-v'] if '-v' in list(opts.keys()) else None
-    if vcf_file is None:
-        usage();
-        sys.exit('Input VCF file is missing!')
     fusion_file = opts['-z'] if '-z' in list(opts.keys()) else None
-    if fusion_file is None:
+
+    if vcf_file is None and fusion_file is None:
+        sys.exit('At least vcf file or fusion file must be provided, terminating...')
+        usage();
+    elif fusion_file is None:
         print('Fusion file is missing, chimeric junction antigens will not be calculated')
+    elif vcf_file is None:
+        print('VCF file is missing, SNV antigens will not be calculated')
+    else:
+        print('Calculating neoantigens for both chimeric funtions and SNV')
+
     peptide_length = opts['-l'] if '-l' in list(opts.keys()) else 9
     expression_file = opts['-e'] if '-e' in list(opts.keys()) else None
     expression_type = opts['-E'] if '-E' in list(opts.keys()) else 'transcript'
@@ -2246,4 +2270,5 @@ def read_options(argv):
 ################
 
 if __name__ == '__main__':
+    print(sys.argv[1:])
     main(sys.argv[1:])
