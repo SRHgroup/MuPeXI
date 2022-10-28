@@ -51,6 +51,12 @@ def main(args):
     genome_reference = build_genome_reference(paths.genome_ref_file, input_.webserver, species)
     cancer_genes = build_cancer_genes(paths.cosmic_file, input_.webserver)
 
+    # Extract reference peptides
+    reference_peptides, reference_peptide_counters, \
+    reference_peptide_file_names = reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir,
+                                                                input_.webserver, input_.keep_temp, input_.prefix,
+                                                                input_.outdir, input_.config)
+
     """
     VEP: Ensembls Variant effect predictor 
     Detecting vcf file input, extracting allele frequencies and running VEP
@@ -81,12 +87,6 @@ def main(args):
         """
         start_time_mupex = datetime.now()
         print_ifnot_webserver('\nMuPeX: Starting mutant peptide extraction for SNV mutations', input_.webserver)
-
-        # Extract reference peptides
-        reference_peptides, reference_peptide_counters, \
-        reference_peptide_file_names = reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir,
-                                                                    input_.webserver, input_.keep_temp, input_.prefix,
-                                                                    input_.outdir, input_.config)
 
         # extract mutant peptides
         peptide_info, peptide_counters, fasta_printout, \
@@ -136,10 +136,13 @@ def main(args):
                                                                        webserver=None, junction_filter=3,
                                                                        spanning_filter=1)
 
-        fus_peptide_info, fus_peptide_counters, fus_fasta_printout = fusion_peptide_extraction(
+        fus_peptide_info, fus_peptide_counters, fus_fasta_printout, fus_pepmatch = fusion_peptide_extraction(
             peptide_lengths=peptide_length, fus_info=fus_info,
+            reference_peptide_file_names=reference_peptide_file_names,
             fasta_file_name=f'{input_.fasta_file_name}_fus_peptides',
-            tmp_dir=tmp_dir, webserver=None, keep_tmp=True, file_prefix=input_.prefix,
+            tmp_dir=tmp_dir, keep_tmp=True, file_prefix=input_.prefix,
+            webserver=input_.webserver, num_mismatches=input_.num_mismatches,
+            peptide_match=paths.peptide_match, print_mismatch=input_.print_mismatch,
             outdir=input_.outdir)
 
         # peptide_info.update(fus_peptide_info)
@@ -1017,15 +1020,17 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
 
     keep_temp_file(keep_tmp, 'txt', pepmatch_file_names, file_prefix, outdir, peptide_lengths, 'pepmatch')
 
+    print(pepmatch_file_names)
     return peptide_info, peptide_counters, fasta_printout, pepmatch_file_names
 
 
-def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name,
-                              tmp_dir, webserver, keep_tmp, file_prefix, outdir):
+def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name, reference_peptide_file_names,
+                              tmp_dir, keep_tmp, file_prefix, webserver, num_mismatches,
+                              peptide_match, print_mismatch, outdir):
     print_ifnot_webserver('\tFusion Peptide extraction begun', webserver)
     peptide_info = defaultdict(dict)  # empty dictionary
     fasta_printout = defaultdict(dict) if not fasta_file_name is None else None
-    # pepmatch_file_names = defaultdict(dict)  # empty dictionary
+    pepmatch_file_names = defaultdict(dict)  # empty dictionary
 
     for p_length in peptide_lengths:
         print_ifnot_webserver('\t\tFusion Peptides of {} aa are being extracted'.format(p_length), webserver)
@@ -1047,10 +1052,22 @@ def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name,
                     fasta_printout[
                         f'>DTU_FUSION_{fusion_info_i.fusion_id}_length={p_length}_LBD={left_breakpoint_dis}'] = pep
 
-    # keep_temp_file(keep_tmp, 'txt', pepmatch_file_names, file_prefix, outdir, peptide_lengths, 'pepmatch')
+        peptide_info, pepmatch_file_names = normal_peptide_correction(
+            mutated_peptides_missing_normal=set(peptide_info.keys()),
+            mutation_info=fus_info,
+            peptide_length=p_length,
+            reference_peptide_file_names=reference_peptide_file_names,
+            peptide_info=peptide_info,
+            peptide_match=peptide_match, tmp_dir=tmp_dir,
+            pepmatch_file_names=pepmatch_file_names,
+            webserver=webserver, print_mismatch=print_mismatch,
+            num_mismatches=num_mismatches,
+            mode='FUS')
+
+    keep_temp_file(keep_tmp, 'txt', pepmatch_file_names, file_prefix, outdir, peptide_lengths, 'pepmatch')
     peptide_counters = len(peptide_info)
 
-    return peptide_info, peptide_counters, fasta_printout
+    return peptide_info, peptide_counters, fasta_printout, pepmatch_file_names
 
 
 # peptide_extraction
@@ -1281,7 +1298,7 @@ def normal_peptide_identification(peptide_info, mutated_peptides_missing_normal,
 # peptide_extraction
 def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, peptide_length,
                               reference_peptide_file_names, peptide_info, peptide_match, tmp_dir, pepmatch_file_names,
-                              webserver, print_mismatch, num_mismatches):
+                              webserver, print_mismatch, num_mismatches, mode='SNV'):
     # write input file
     mutpeps_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
     mutpeps_file.write(str.encode('{}\n'.format('\n'.join(mutated_peptides_missing_normal))))
@@ -1293,14 +1310,24 @@ def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, pe
     pepmatch_file_names[peptide_length] = pepmatch_file
 
     # insert normal in peptide info
-    for mutated_peptide in pep_match:
-        assert mutated_peptide in peptide_info, 'Mutated peptide "{}" not stated in peptide_info data structure'.format(
-            mutated_peptide)
-        for normal_peptide in peptide_info[mutated_peptide].keys():
-            # renaming normal key, thereby inserting the normal peptide
-            peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide] = peptide_info[
-                mutated_peptide].pop(normal_peptide)
-            peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide][3] = pep_match[mutated_peptide]
+    if mode == 'SNV':
+
+        for mutated_peptide in pep_match:
+            assert mutated_peptide in peptide_info, 'Mutated peptide "{}" not stated in peptide_info data structure'.format(
+                mutated_peptide)
+            for normal_peptide in peptide_info[mutated_peptide].keys():
+                # renaming normal key, thereby inserting the normal peptide
+                peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide] = peptide_info[
+                    mutated_peptide].pop(normal_peptide)
+                peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide][3] = pep_match[mutated_peptide]
+
+    elif mode == 'FUS':
+
+        for mutated_peptide in pep_match:
+            peptide_info[mutated_peptide] = {
+                # pep_match[mutated_peptide].normal_peptide:peptide_info[mutated_peptide][mutated_peptide] # very weird bug here!!
+                pep_match[mutated_peptide].normal_peptide: list(peptide_info[mutated_peptide].values())[0]
+            }
 
     return peptide_info, pepmatch_file_names
 
@@ -1618,7 +1645,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                       webserver, print_mismatch, allele_fractions, expression_file_type, transcript_info,
                       reference_peptides, proteome_reference, protein_positions,
                       version, mode='SNV'):
-    print_ifnot_webserver('\tWriting output file for fusion-derived peptides', webserver)
+    print_ifnot_webserver(f'\tWriting output file for {mode}-derived peptides', webserver)
     printed_ids = set()
     row = 0
 
@@ -1647,7 +1674,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
             cols = mupexi_core_cols + net_mhc_EL_cols + normal_mhc_EL_cols + snv_cols
             df = pandas.DataFrame(columns=cols, )
         elif mode == 'FUS':
-            cols = mupexi_core_cols + net_mhc_EL_cols + fusion_cols
+            cols = mupexi_core_cols + net_mhc_EL_cols + normal_mhc_EL_cols + fusion_cols
             df = pandas.DataFrame(columns=cols, )
     else:
         if mode == 'SNV':
@@ -1655,13 +1682,19 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                    net_mhc_BA_cols + normal_mhc_BA_cols + normal_mhc_EL_cols + snv_cols
             df = pandas.DataFrame(columns=cols, )
         elif mode == 'FUS':
-            cols = mupexi_core_cols + net_mhc_EL_cols + net_mhc_BA_cols + fusion_cols
+            cols = mupexi_core_cols + net_mhc_EL_cols + \
+                   normal_mhc_EL_cols + normal_mhc_BA_cols + net_mhc_BA_cols + fusion_cols
             df = pandas.DataFrame(columns=cols, )
 
         # Extract data
         for mutant_peptide in peptide_info:
             for normal_peptide in peptide_info[mutant_peptide]:
                 for hla in unique_alleles.split(','):
+
+                    mutant_netmhc_info = net_mhc_EL[hla][mutant_peptide]
+                    normal_netmhc_info = net_mhc_EL[hla][normal_peptide]
+                    mutant_netmhc_BA_info = net_mhc_BA[hla][mutant_peptide]
+                    normal_netmhc_BA_info = net_mhc_BA[hla][normal_peptide]
 
                     if mode == 'SNV':
                         # Checking concordance between MHC files  and intermediatepeptide_info file
@@ -1683,9 +1716,6 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                                                        webserver=webserver, print_mismatch=print_mismatch,
                                                        printed_ids=printed_ids
                                                        )
-
-                        mutant_netmhc_info = net_mhc_EL[hla][mutant_peptide]
-                        normal_netmhc_info = net_mhc_EL[hla][normal_peptide]
 
                         # Extract expression value if file is given expression_file_type, expression,
                         # gene_id, webserver, transcripts, printed_ids
@@ -1732,9 +1762,6 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                             assert normal_peptide in net_mhc_BA[
                                 hla], 'Normal peptide "{}" not found in NetMHCpan output'.format(normal_peptide)
 
-                            mutant_netmhc_BA_info = net_mhc_BA[hla][mutant_peptide]
-                            normal_netmhc_BA_info = net_mhc_BA[hla][normal_peptide]
-
                             row_content.update({'Mut_MHCrank_BA': mutant_netmhc_BA_info.rank,
                                                 'Mut_MHCscore_BA': mutant_netmhc_BA_info.score,
                                                 'Mut_MHCaffinity': mutant_netmhc_BA_info.affinity,
@@ -1750,7 +1777,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                             mutant_peptide)
 
                         row_content = extract_fusion_info(
-                            fusion_info_tuple=peptide_info[mutant_peptide][mutant_peptide],
+                            fusion_info_tuple=peptide_info[mutant_peptide][normal_peptide],
                             cancer_genes=cancer_genes, printed_ids=printed_ids)
 
                         if expression is not None:
@@ -1767,13 +1794,14 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                         else:
                             Expression_Level = None
 
-                        mutant_netmhc_info = net_mhc_EL[hla][mutant_peptide]
-
                         row_content.update({'HLA_allele': hla, 'Mut_peptide': mutant_peptide,
                                             'Mut_MHCrank_EL': mutant_netmhc_info.rank,
                                             'Mut_MHCscore_EL': mutant_netmhc_info.score,
                                             'Mutant_affinity_score': mutant_netmhc_info.affinity,
-                                            'Expression_Level': Expression_Level, 'Expression_score': Expression_Level})
+                                            'Norm_MHCrank_EL': normal_netmhc_info.rank,
+                                            'Norm_MHCscore_EL': normal_netmhc_info.score,
+                                            'Expression_Level': Expression_Level,
+                                            'Expression_score': Expression_Level})
 
                         if net_mhc_BA is not None:
                             # Checking concordance between MHC files  and intermediatepeptide_info file
@@ -1782,11 +1810,12 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                                 hla], 'Mutant peptide "{}" not found in NetMHCpan output'.format(
                                 mutant_peptide)
 
-                            mutant_netmhc_BA_info = net_mhc_BA[hla][mutant_peptide]
-
                             row_content.update({'Mut_MHCrank_BA': mutant_netmhc_BA_info.rank,
                                                 'Mut_MHCscore_BA': mutant_netmhc_BA_info.score,
-                                                'Mut_MHCaffinity': mutant_netmhc_BA_info.affinity})
+                                                'Mut_MHCaffinity': mutant_netmhc_BA_info.affinity,
+                                                'Norm_MHCrank_BA': normal_netmhc_BA_info.rank,
+                                                'Norm_MHCscore_BA': normal_netmhc_BA_info.score,
+                                                'Norm_MHCaffinity': normal_netmhc_BA_info.affinity})
 
                     df.loc[row] = pandas.Series(row_content)[cols]
 
@@ -2270,5 +2299,4 @@ def read_options(argv):
 ################
 
 if __name__ == '__main__':
-    print(sys.argv[1:])
     main(sys.argv[1:])
