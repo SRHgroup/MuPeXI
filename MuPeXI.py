@@ -24,6 +24,7 @@ import psutil
 import sys, re, getopt, itertools, warnings, string, subprocess, os.path, math, tempfile, shutil, numpy, pandas
 import six
 from six.moves import zip
+import warnings
 
 
 def main(args):
@@ -74,7 +75,7 @@ def main(args):
         vcf_sorted_file = create_vep_compatible_vcf(vcf_file, input_.webserver, input_.keep_temp, input_.outdir,
                                                     input_.prefix, tmp_dir, input_.liftover)
 
-        allele_fractions = extract_allele_frequency(vcf_sorted_file, input_.webserver, variant_caller)
+        snv_qc = extract_snv_qc(vcf_sorted_file, input_.webserver, variant_caller)
         vep_file = run_vep(vcf_sorted_file, input_.webserver, tmp_dir, paths.vep_path, paths.vep_dir, input_.keep_temp,
                            input_.prefix, input_.outdir, input_.assembly, input_.fork, species)
         vep_info, vep_counters, transcript_info, protein_positions = build_vep_info(vep_file, input_.webserver)
@@ -118,7 +119,7 @@ def main(args):
                                         net_mhc_EL=net_mhc_EL, unique_alleles=unique_alleles, cancer_genes=cancer_genes,
                                         tmp_dir=tmp_dir, webserver=input_.webserver,
                                         print_mismatch=input_.print_mismatch,
-                                        allele_fractions=allele_fractions, expression_file_type=input_.expression_type,
+                                        snv_qc=snv_qc, expression_file_type=input_.expression_type,
                                         transcript_info=transcript_info, reference_peptides=reference_peptides,
                                         proteome_reference=proteome_reference, protein_positions=protein_positions,
                                         version=version, mode='SNV')
@@ -172,7 +173,7 @@ def main(args):
                                             net_mhc_EL=fus_net_mhc_EL, unique_alleles=unique_alleles,
                                             cancer_genes=cancer_genes,
                                             tmp_dir=tmp_dir, webserver=input_.webserver, print_mismatch=None,
-                                            allele_fractions=None,
+                                            snv_qc=None,
                                             expression_file_type=input_.expression_type,
                                             transcript_info=fus_transcript_info,
                                             reference_peptides=None, proteome_reference=None, protein_positions=None,
@@ -239,10 +240,10 @@ def check_input_paths(input_, peptide_lengths, species):
 
     # Exit program if genome or proteome reference is not stated
     if file_names['cDNA'] is None:
-        usage();
+        usage()
         sys.exit('cDNA reference file is missing!')
     if file_names['pep'] is None:
-        usage();
+        usage()
         sys.exit('Proteome reference file is missing!')
 
     if input_.expression_file is not None:
@@ -276,7 +277,7 @@ def create_lits_for_path_checkup(peptide_lengths):
 def config_parse(config_file, category, ID):
     # check if config.ini file exists
     if not os.path.exists(config_file):
-        usage();
+        usage()
         sys.exit(
             'ERROR: Path to OR config.ini does not exist!\nERROR: Use -c option to specify path/to/config.ini file\n')
 
@@ -291,7 +292,7 @@ def config_parse(config_file, category, ID):
 def check_path(path):
     if path is not None:
         if not os.path.exists(path):
-            usage();
+            usage()
             sys.exit('ERROR: {} path or file does not exist\n'.format(path))
 
 
@@ -304,7 +305,7 @@ def check_vcf_file(vcf_file, liftover, species, webserver):
     with open(vcf_file) as f:
         first_line = f.readline()
         if not first_line.startswith('##fileformat=VCF'):
-            usage();
+            usage()
             sys.exit('ERROR: {} file is not a VCF file\n'.format(vcf_file))
         for line in f.readlines():
             if not webserver is None:
@@ -312,7 +313,7 @@ def check_vcf_file(vcf_file, liftover, species, webserver):
                     if '##reference' in line:
                         if 'GRCh37' in line or 'hg19' in line or 'HG19' in line:
                             if liftover is None and species.assembly == "GRCh38":
-                                usage();
+                                usage()
                                 sys.exit(
                                     'ERROR: The VCF file is aligned to HG19 / GRCh37\nINFO: {}\nINFO: Please run NGS '
                                     'analysis aligning to GRCh38, use the hg19 liftover option (-g/--hg19), or the '
@@ -322,7 +323,7 @@ def check_vcf_file(vcf_file, liftover, species, webserver):
             if '#CHROM' in line:
                 break
             elif not line.startswith('##'):
-                usage();
+                usage()
                 sys.exit('ERROR: {} file is not a VCF file, #CHROM header is missing\n'.format(vcf_file))
 
 
@@ -331,12 +332,12 @@ def check_netMHC_path(netMHC_path):
         print('\tMouse specific MHC binding predictor netH2pan used')
     elif 'netMHCpan' in netMHC_path:
         if not '4.0' in netMHC_path:
-            usage();
+            usage()
             sys.exit(
                 'ERROR:\tnetMHCpan version 4.0 not stated in path {}\n\tOnly this version is supported'.format(
                     netMHC_path))
     else:
-        usage();
+        usage()
         sys.exit(
             'ERROR:\tnetMHCpan / netH2pan not stated in path {} \n\t\tCheck the correct path to the netXpan binding '
             'predictor is annotated in the config.ini'.format(netMHC_path))
@@ -396,7 +397,7 @@ def build_proteome_reference(proteome_ref_file, webserver, species):
             if line.startswith('>'):  # fasta header (>)
                 # test species compatibility
                 if not species.gene_id_prefix in line:
-                    usage();
+                    usage()
                     sys.exit(
                         'ERROR: species prefix {} for {} not found in proteome reference file\nINFO: '
                         'use --species option if another species than {} is used'.format(
@@ -422,7 +423,7 @@ def build_genome_reference(genome_ref_file, webserver, species):
             if line.startswith('>'):  # fasta header (>)
                 # test species compatibility
                 if not species.gene_id_prefix in line:
-                    usage();
+                    usage()
                     sys.exit(
                         'ERROR: species prefix {} for {} not found in cDNA reference file\nINFO: '
                         'use --species option if another species than {} is used'.format(
@@ -484,7 +485,7 @@ def define_species(species):
         assembly = 'C57BL_6NJ_v1'
         species = 'mus_musculus_c57bl6nj'
     else:
-        usage();
+        usage()
         sys.exit('ERROR:\tSpecies {} not recognized \n'.format(species))
 
     Species = namedtuple('species', ['gene_id_prefix', 'trans_id_prefix', 'assembly', 'species'])
@@ -496,13 +497,13 @@ def define_species(species):
 def check_expression_file_type(expression_type, line, species):
     if expression_type == 'gene':
         if species.trans_id_prefix in line[0]:
-            usage();
+            usage()
             sys.exit(
                 'ERROR:\tEnsembl transcript id detected: {}\n\tWhile expression type option "gene" was used\n'.format(
                     line[0]))
     if expression_type == 'transcript':
         if species.gene_id_prefix in line[0]:
-            usage();
+            usage()
             sys.exit(
                 'ERROR:\tEnsembl gene id detected: {}\n\tWhile expression type option "transcript" was used\n'.format(
                     line[0]))
@@ -633,11 +634,12 @@ def create_vep_compatible_vcf(vcf_file, webserver, keep_tmp, outdir, file_prefix
     return vcf_sorted_file
 
 
-def extract_allele_frequency(vcf_sorted_file, webserver, variant_caller):
+def extract_tumor_vaf(vcf_sorted_file, webserver, variant_caller, tumor_prefix='_T'):
     """
     :param vcf_sorted_file: vcf file as the output of create_vep_compatible_vcf() function
     :param webserver: bool, whether you perform analysis on the webserver
     :param variant_caller: str, what program was used for the variant colling, Mutec and Mutec2 preffered
+    :param tumor_prefix: str, prefix in the VCF file that identifies column with tumor mutational metrics
     :return: defaultdict, dict with mutation_id : tumor_vaf values
     """
 
@@ -661,7 +663,7 @@ def extract_allele_frequency(vcf_sorted_file, webserver, variant_caller):
                     alt_i = header.index('ALT')
                     format_i = header.index('FORMAT')
 
-                    tumor_meta_i = [i for i, item in enumerate(header) if item.endswith('_T')][0]
+                    tumor_meta_i = [i for i, item in enumerate(header) if item.endswith(tumor_prefix)][0]
                 else:
                     columns = line.split('\t')
                     chromosome = columns[chr_i].strip()
@@ -686,6 +688,79 @@ def extract_allele_frequency(vcf_sorted_file, webserver, variant_caller):
                     allele_fractions[ID] = allele_fraction
 
     return allele_fractions
+
+
+def extract_snv_qc(vcf_sorted_file, webserver, variant_caller):
+    """
+    :param vcf_sorted_file: vcf file as the output of create_vep_compatible_vcf() function
+    :param webserver: bool, whether you perform analysis on the webserver
+    :param variant_caller: str, what program was used for the variant colling, MuTect and MuTect2 preffered
+
+    :return: defaultdict, dict of dicts
+    {mutation_id : {tumor_vaf, normal_vaf, tumor_depth, normal_depth, alt_read_counts}}
+    """
+
+    print_ifnot_webserver('\tExtracting allele frequencies', webserver)
+    snv_qc = defaultdict(dict)
+
+    if variant_caller not in ('MuTect', 'MuTect2'):
+        snv_qc = None  # no variant caller detected
+    else:
+        with open(vcf_sorted_file.name) as f:
+            for line in f.readlines():
+                if line.startswith('##'):
+                    continue
+                elif line.startswith('#'):
+                    header = line.split('\t')
+                    header = [re.sub(r'\n|#', '', file) for file in header]
+
+                    chr_i = header.index('CHROM')
+                    pos_i = header.index('POS')
+                    ref_i = header.index('REF')
+                    alt_i = header.index('ALT')
+                    format_i = header.index('FORMAT')
+
+                    tumor_meta_i = [i for i, item in enumerate(header) if item.endswith('_T')][0]
+                    normal_meta_i = [i for i, item in enumerate(header) if item.endswith('_N')][0]
+                    ### BUG ALERT, will only work with _T _N as a marker of normal/tumor samples ###
+                else:
+                    columns = line.split('\t')
+                    chromosome = columns[chr_i].strip()
+                    genomic_position = columns[pos_i].strip()
+                    reference_allele = columns[ref_i].strip()
+                    altered_allele = columns[alt_i].strip()
+                    format_fields = columns[format_i].strip().split(':')
+                    if not len(reference_allele) == len(altered_allele):
+                        altered_allele = altered_allele[1:] if len(reference_allele) < len(
+                            altered_allele) else altered_allele
+                        altered_allele = '-' if len(reference_allele) > len(altered_allele) else altered_allele
+
+                    if variant_caller == 'MuTect':  # GT:AD:BQ:DP:FA
+                        vaf_column = 'FA'
+                    elif variant_caller == 'MuTect2':  # GT:AD:AF:ALT_F1R2:ALT_F2R1:FOXOG:QSS:REF_F1R2:REF_F2R1
+                        vaf_column = 'AF'
+
+                    tumor_vaf = columns[tumor_meta_i].split(':')[
+                        format_fields.index(vaf_column)].strip()
+                    normal_vaf = columns[normal_meta_i].split(':')[
+                        format_fields.index(vaf_column)].strip()
+
+                    tumor_ad = columns[tumor_meta_i].split(':')[format_fields.index('AD')].strip().split(',')
+                    normal_ad = columns[normal_meta_i].split(':')[format_fields.index('AD')].strip().split(',')
+
+                    t_alt_count = tumor_ad[1]
+
+                    t_depth = int(tumor_ad[0]) + int(tumor_ad[1])
+                    n_depth = int(normal_ad[0]) + int(normal_ad[1])
+
+                    ID = '{chromosome}_{genomic_position}_{altered_allele}'.format(
+                        chromosome=chromosome,
+                        genomic_position=genomic_position if not altered_allele == '-' else int(genomic_position) + 1,
+                        altered_allele=altered_allele)
+                    snv_qc[ID] = {'tumor_vaf': tumor_vaf, 'normal_vaf': normal_vaf,
+                                  't_depth': t_depth, 'n_depth': n_depth, 't_alt_count': t_alt_count}
+
+    return snv_qc
 
 
 def run_vep(vcf_sorted_file, webserver, tmp_dir, vep_path, vep_dir, keep_tmp, file_prefix, outdir, input_assembly, fork,
@@ -819,6 +894,11 @@ def build_vep_info(vep_file, webserver):
     return vep_info, vep_counters, transcript_info, protein_positions
 
 
+######
+# FUS
+######
+
+
 def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, junction_filter=3, spanning_filter=1):
     if discarded_fusion_file is not None:  # should be if else with discarded read by default, and second option for star-fusion outs
         fus_df = pandas.concat([read_dataset(fusion_file, index_col=None),
@@ -837,7 +917,8 @@ def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, juncti
     Fusion_Info = namedtuple('Fusion_info',
                              ['fusion_id', 'gene_id1', 'gene_id2', 'trans_id1', 'trans_id2',
                               'junction_coverage', 'spanning_coverage', 'reading_frame',
-                              'sites', 'breakpoints', 'protein_sequence', 'left_breakpoint_distance', 'symbols'])
+                              'sites', 'breakpoints', 'protein_sequence', 'left_breakpoint_distance', 'symbols',
+                              'normal_peptide', 'mismatches'])
 
     fus_transcript_info = defaultdict(dict)
     protein_positions = defaultdict(lambda: defaultdict(dict))
@@ -858,6 +939,8 @@ def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, juncti
         reading_frame = row['reading_frame']
         sites = '{}|{}'.format(row['site1'], row['site2'])
         breakpoints = '{}|{}'.format(row['breakpoint1'], row['breakpoint2'])
+        normal_peptide = None
+        mismatches = None
 
         left_breakpoint_distance = ''
 
@@ -867,8 +950,8 @@ def build_fusion_info(fusion_file, webserver, discarded_fusion_file=None, juncti
 
         fus_info.append(Fusion_Info(fusion_id, geneID1, geneID2, transID1, transID2,
                                     junction_coverage, spanning_coverage, reading_frame,
-                                    sites, breakpoints, protein_sequence, left_breakpoint_distance,
-                                    symbols))
+                                    sites, breakpoints, protein_sequence, left_breakpoint_distance, symbols,
+                                    normal_peptide, mismatches))
 
         fus_transcript_info[fusion_id].setdefault('{}|{}'.format(geneID1, geneID2), []).append([transID1, transID1])
 
@@ -938,7 +1021,7 @@ def reference_peptide_extraction(proteome_reference, peptide_length, tmp_dir, we
     return reference_peptides, reference_peptide_counters, reference_peptide_file_names
 
 
-def chopchop(aaSeq, peptide_length, mut_type='SNV'):
+def chopchop(aaSeq, peptide_length, mut_type='SNV', reading_frame='in-frame'):
     if mut_type == 'SNV':
         peptides = []
         for i in range(len(aaSeq)):
@@ -948,21 +1031,36 @@ def chopchop(aaSeq, peptide_length, mut_type='SNV'):
             peptides.append(pep)
 
     elif mut_type == 'FUS':
+
+        if reading_frame == 'in-frame':
+            pep_range = peptide_length - 1
+        elif reading_frame == 'out-of-frame':
+            pep_range = len(aaSeq) - 1
+        else:
+            sys.exit('reading_frame argument must be either in-frame or out-of-frame')
+
         if '|' in aaSeq:
             peptides = []
             breakpoint_pos = aaSeq.find('|')
-            for i in range(peptide_length - 1):
+            for i in range(pep_range):
 
-                fus_seq_i = aaSeq[(breakpoint_pos - (peptide_length - i - 1)):breakpoint_pos + i + 2]
+                pep_start = (breakpoint_pos - (peptide_length - i - 1))
+
+                if i < peptide_length - 1:
+                    pep_end = breakpoint_pos + i + 2
+                else:
+                    pep_end = breakpoint_pos + i + 1
+
+                fus_seq_i = aaSeq[pep_start:pep_end]
 
                 if len(fus_seq_i.replace('|', '')) != peptide_length:
                     continue
 
                 peptides.append(fus_seq_i)
         else:
-            print('Fusion protein sequence must have | as a breakpoint symbol')
+            warnings.warn('Fusion protein sequence must have | as a breakpoint symbol')
     else:
-        print('mut_type argument should be either SNV or FUS')
+        sys.exit('mut_type argument should be either SNV or FUS')
 
     return peptides
 
@@ -1020,8 +1118,18 @@ def peptide_extraction(peptide_lengths, vep_info, proteome_reference, genome_ref
 
     keep_temp_file(keep_tmp, 'txt', pepmatch_file_names, file_prefix, outdir, peptide_lengths, 'pepmatch')
 
-    print(pepmatch_file_names)
     return peptide_info, peptide_counters, fasta_printout, pepmatch_file_names
+
+
+##### VERY BAD DESCISION, BETTER REDO DICT OF DICTS STRUCTURE AND STORE NORM PEPTIDE WITHIN A NAMED TUPLE
+def unlist_dict_of_dicts(dicti):
+    for key, value in dicti.items():
+        for key2, value2 in value.items():
+
+            if isinstance(value2[0], list):
+                dicti[key][key2][0] = dicti[key][key2][0][0]
+                print('w', key2, value2[0])
+    return dicti
 
 
 def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name, reference_peptide_file_names,
@@ -1034,23 +1142,23 @@ def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name, refere
 
     for p_length in peptide_lengths:
         print_ifnot_webserver('\t\tFusion Peptides of {} aa are being extracted'.format(p_length), webserver)
-        if fus_info:
-            for fusion_info_i in fus_info:
-                protein_sequence = fusion_info_i.protein_sequence.replace('*', '').replace('?', '').upper()
-                peptides = chopchop(aaSeq=protein_sequence,
-                                    peptide_length=p_length,
-                                    mut_type='FUS')
 
-                for pep in peptides:
-                    left_breakpoint_dis = pep.find('|')
-                    pep = pep.replace('|', '')
+        for fusion_info_i in fus_info:
+            protein_sequence = fusion_info_i.protein_sequence.replace('*', '').replace('?', '').upper()
 
-                    fusion_info_i = fusion_info_i._replace(left_breakpoint_distance=left_breakpoint_dis)
+            peptides = chopchop(aaSeq=protein_sequence, peptide_length=p_length,
+                                mut_type='FUS', reading_frame=fusion_info_i.reading_frame)
 
-                    peptide_info[pep] = {pep: fusion_info_i}
+            for pep in peptides:
+                left_breakpoint_dis = pep.find('|')
+                pep = pep.replace('|', '')
 
-                    fasta_printout[
-                        f'>DTU_FUSION_{fusion_info_i.fusion_id}_length={p_length}_LBD={left_breakpoint_dis}'] = pep
+                fusion_info_i = fusion_info_i._replace(left_breakpoint_distance=left_breakpoint_dis)
+
+                peptide_info[pep] = {pep: fusion_info_i}
+
+                fasta_printout[
+                    f'>DTU_FUSION_{fusion_info_i.fusion_id}_length={p_length}_LBD={left_breakpoint_dis}'] = pep
 
         peptide_info, pepmatch_file_names = normal_peptide_correction(
             mutated_peptides_missing_normal=set(peptide_info.keys()),
@@ -1063,6 +1171,8 @@ def fusion_peptide_extraction(peptide_lengths, fus_info, fasta_file_name, refere
             webserver=webserver, print_mismatch=print_mismatch,
             num_mismatches=num_mismatches,
             mode='FUS')
+
+    peptide_info = unlist_dict_of_dicts(peptide_info)
 
     keep_temp_file(keep_tmp, 'txt', pepmatch_file_names, file_prefix, outdir, peptide_lengths, 'pepmatch')
     peptide_counters = len(peptide_info)
@@ -1299,6 +1409,10 @@ def normal_peptide_identification(peptide_info, mutated_peptides_missing_normal,
 def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, peptide_length,
                               reference_peptide_file_names, peptide_info, peptide_match, tmp_dir, pepmatch_file_names,
                               webserver, print_mismatch, num_mismatches, mode='SNV'):
+    """
+    make
+    """
+
     # write input file
     mutpeps_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
     mutpeps_file.write(str.encode('{}\n'.format('\n'.join(mutated_peptides_missing_normal))))
@@ -1310,24 +1424,40 @@ def normal_peptide_correction(mutated_peptides_missing_normal, mutation_info, pe
     pepmatch_file_names[peptide_length] = pepmatch_file
 
     # insert normal in peptide info
-    if mode == 'SNV':
+    for mutated_peptide in pep_match:
 
-        for mutated_peptide in pep_match:
+        if not pep_match[mutated_peptide]:
+            continue
+        else:
             assert mutated_peptide in peptide_info, 'Mutated peptide "{}" not stated in peptide_info data structure'.format(
                 mutated_peptide)
-            for normal_peptide in peptide_info[mutated_peptide].keys():
-                # renaming normal key, thereby inserting the normal peptide
-                peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide] = peptide_info[
-                    mutated_peptide].pop(normal_peptide)
-                peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide][3] = pep_match[mutated_peptide]
 
-    elif mode == 'FUS':
+            if mode == 'SNV':
 
-        for mutated_peptide in pep_match:
-            peptide_info[mutated_peptide] = {
-                # pep_match[mutated_peptide].normal_peptide:peptide_info[mutated_peptide][mutated_peptide] # very weird bug here!!
-                pep_match[mutated_peptide].normal_peptide: list(peptide_info[mutated_peptide].values())[0]
-            }
+                for normal_peptide in peptide_info[mutated_peptide].keys():
+                    # renaming normal key, thereby inserting the normal peptide
+                    peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide] = peptide_info[
+                        mutated_peptide].pop(normal_peptide)
+                    peptide_info[mutated_peptide][pep_match[mutated_peptide].normal_peptide][3] = pep_match[
+                        mutated_peptide]
+
+            elif mode == 'FUS':
+
+                fusion_info_i = list(peptide_info[mutated_peptide].values())[0]
+
+                # print('mismatches', pep_match[mutated_peptide].mismatch)
+                # print('normal pep', pep_match[mutated_peptide].normal_peptide)
+
+                mismatch = pep_match[mutated_peptide].mismatch
+                normal_peptide = pep_match[mutated_peptide].normal_peptide
+
+                fusion_info_i = fusion_info_i._replace(mismatches=mismatch)
+                fusion_info_i = fusion_info_i._replace(normal_peptide=normal_peptide)
+
+                peptide_info[mutated_peptide] = {
+                    # pep_match[mutated_peptide].normal_peptide:peptide_info[mutated_peptide][mutated_peptide] # very weird bug here!!
+                    pep_match[mutated_peptide].normal_peptide: fusion_info_i
+                }
 
     return peptide_info, pepmatch_file_names
 
@@ -1553,8 +1683,8 @@ def build_netMHC(netMHC_file, webserver, affinity):
 
 def extract_snv_info(snv_info_tuple, mutant_peptide, normal_peptide, proteome_reference, protein_positions,
                      transcript_info,
-                     allele_fractions, cancer_genes, reference_peptides, webserver, print_mismatch, printed_ids):
-    mutation_info = snv_info_tuple[0]
+                     snv_qc, cancer_genes, reference_peptides, webserver, print_mismatch, printed_ids):
+    mutation_info = snv_info_tuple[0]  # redo it
     peptide_sequence_info = snv_info_tuple[1]
 
     pep_match_info = snv_info_tuple[3]
@@ -1578,7 +1708,7 @@ def extract_snv_info(snv_info_tuple, mutant_peptide, normal_peptide, proteome_re
     protein_positions_extracted = extract_protein_position(transcript_ids, mutation_id_vep,
                                                            mutation_info.gene_id, protein_positions)
 
-    allele_frequency = state_allele_frequency(allele_fractions, mutation_info)
+    snv_qcs = state_snv_qc(snv_qc, mutation_info)
 
     # Extract cancer genes if file is given
     if not cancer_genes is None:
@@ -1586,16 +1716,17 @@ def extract_snv_info(snv_info_tuple, mutant_peptide, normal_peptide, proteome_re
     else:
         cancer_gene = '-'
 
-    return {'Norm_peptide': Norm_peptide, 'Gene_ID': mutation_info.gene_id,
-            'mutation_id_vep': mutation_id_vep, 'Transcript_ID': mutation_info.trans_id,
-            'Amino_Acid_Change': '{}/{}'.format(mutation_info.aa_normal, mutation_info.aa_mut),
-            'Allele_Frequency': allele_frequency, 'Mismatches': Mismatches,
-            'peptide_position': protein_positions_extracted, 'Chr': mutation_info.chr,
-            'Genomic_Position': mutation_info.pos, 'Protein_position': mutation_info.prot_pos,
-            'Mutation_Consequence': mutation_info.mutation_consequence,
-            'Gene_Symbol': '-' if mutation_info.symbol is None else mutation_info.symbol,
-            'Cancer_Driver_Gene': cancer_gene,
-            'Proteome_Peptide_Match': 'Yes' if mutant_peptide in reference_peptides else 'No'}
+    return {**{
+        'Norm_peptide': Norm_peptide, 'Gene_ID': mutation_info.gene_id,
+        'mutation_id_vep': mutation_id_vep, 'Transcript_ID': mutation_info.trans_id,
+        'Amino_Acid_Change': '{}/{}'.format(mutation_info.aa_normal, mutation_info.aa_mut),
+        'peptide_position': protein_positions_extracted, 'Chr': mutation_info.chr,
+        'Genomic_Position': mutation_info.pos, 'Protein_position': mutation_info.prot_pos,
+        'Mutation_Consequence': mutation_info.mutation_consequence,
+        'Gene_Symbol': '-' if mutation_info.symbol is None else mutation_info.symbol,
+        'Cancer_Driver_Gene': cancer_gene, 'Mismatches': Mismatches,
+        'Proteome_Peptide_Match': 'Yes' if mutant_peptide in reference_peptides else 'No'},
+            **snv_qcs}
 
 
 def extract_fusion_info(fusion_info_tuple, cancer_genes, printed_ids):
@@ -1624,6 +1755,9 @@ def extract_fusion_info(fusion_info_tuple, cancer_genes, printed_ids):
     Gene_Symbol = re.sub(r'\|.+', '', Gene_Symbols)
     Gene_Symbol2 = re.sub(r'.+\|', '', Gene_Symbols)
 
+    normal_peptide = fusion_info_tuple.normal_peptide
+    Mismatches = fusion_info_tuple.mismatches
+
     # Extract cancer genes if file is given
     if not cancer_genes is None:
         cancer_gene = 'Yes' if any([item in cancer_genes for item in [Gene_Symbol, Gene_Symbol2]]) else 'No'
@@ -1635,34 +1769,34 @@ def extract_fusion_info(fusion_info_tuple, cancer_genes, printed_ids):
             'Chr': Chr, 'Chr2': Chr2, 'Mutation_Consequence': Mutation_Consequence,
             'sites': sites, 'left_breakpoint_distance': left_breakpoint_distance,
             'junction_coverage': junction_coverage, 'spanning_coverage': spanning_coverage,
-            'breakpoints': breakpoints, 'protein_sequence': protein_sequence,
-            'Cancer_Driver_Gene': cancer_gene,
-            'Gene_Symbol': Gene_Symbol, 'Gene_Symbol2': Gene_Symbol2}
+            'breakpoints': breakpoints, 'protein_sequence': protein_sequence, 'Cancer_Driver_Gene': cancer_gene,
+            'Mismatches': Mismatches, 'Norm_peptide': normal_peptide,
+            'Gene_Symbol': Gene_Symbol, 'Gene_Symbol2': Gene_Symbol2}  # gotta add mismatches here too
 
 
 def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                       unique_alleles, cancer_genes, tmp_dir,
-                      webserver, print_mismatch, allele_fractions, expression_file_type, transcript_info,
+                      webserver, print_mismatch, snv_qc, expression_file_type, transcript_info,
                       reference_peptides, proteome_reference, protein_positions,
                       version, mode='SNV'):
     print_ifnot_webserver(f'\tWriting output file for {mode}-derived peptides', webserver)
     printed_ids = set()
     row = 0
 
-    mupexi_core_cols = ['HLA_allele', 'Mut_peptide', 'Cancer_Driver_Gene',
-                        'Expression_Level', 'Expression_score',
+    mupexi_core_cols = ['HLA_allele', 'Mut_peptide', 'Norm_peptide', 'Mismatches',
+                        'Cancer_Driver_Gene', 'Expression_Level', 'Expression_score',
                         'Chr', 'Gene_ID', 'Gene_Symbol', 'Transcript_ID',
-                        'Mutation_Consequence']
+                        'Mutation_Consequence']  # mismatches should be in the core
 
     net_mhc_EL_cols = ['Mut_MHCrank_EL', 'Mut_MHCscore_EL', 'Mutant_affinity_score']
     net_mhc_BA_cols = ['Mut_MHCrank_BA', 'Mut_MHCscore_BA', 'Mut_MHCaffinity']
 
-    normal_mhc_EL_cols = ['Norm_MHCrank_EL', 'Norm_MHCscore_EL']
+    normal_mhc_EL_cols = ['Norm_MHCrank_EL', 'Norm_MHCscore_EL', 'Normal_affinity_score']
     normal_mhc_BA_cols = ['Norm_MHCrank_BA', 'Norm_MHCscore_BA', 'Norm_MHCaffinity']
 
-    snv_cols = ['mutation_id_vep', 'Norm_peptide', 'Amino_Acid_Change', 'Allele_Frequency', 'Mismatches',
-                'peptide_position',
-                'Genomic_Position', 'Protein_position', 'Normal_affinity_score', 'priority_Score']
+    snv_cols = ['mutation_id_vep', 'Amino_Acid_Change', 'peptide_position',
+                'tumor_vaf', 'normal_vaf', 't_depth', 'n_depth', 't_alt_count',
+                'Genomic_Position', 'Protein_position', 'priority_Score']  # priority score should also be in core cols
 
     fusion_cols = ['fusion_id', 'Chr2', 'breakpoints',
                    'Gene_ID2', 'Transcript_ID2', 'Gene_Symbol2',
@@ -1711,7 +1845,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                                                        proteome_reference=proteome_reference,
                                                        protein_positions=protein_positions,
                                                        transcript_info=transcript_info,
-                                                       allele_fractions=allele_fractions,
+                                                       snv_qc=snv_qc,  # start here
                                                        cancer_genes=cancer_genes, reference_peptides=reference_peptides,
                                                        webserver=webserver, print_mismatch=print_mismatch,
                                                        printed_ids=printed_ids
@@ -1734,8 +1868,8 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                                                                               expression_sum=Expression_Level,
                                                                               gene_symbol=row_content['Gene_Symbol'],
                                                                               mismatches=row_content['Mismatches'],
-                                                                              allele_frequency=row_content[
-                                                                                  'Allele_Frequency'],
+                                                                              tumor_vaf=row_content[
+                                                                                  'tumor_vaf'],
                                                                               reference_peptides=reference_peptides,
                                                                               mutant_peptide=mutant_peptide)
                         else:
@@ -1799,6 +1933,7 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
                                             'Mut_MHCscore_EL': mutant_netmhc_info.score,
                                             'Mutant_affinity_score': mutant_netmhc_info.affinity,
                                             'Norm_MHCrank_EL': normal_netmhc_info.rank,
+                                            'Normal_affinity_score': normal_netmhc_info.affinity,
                                             'Norm_MHCscore_EL': normal_netmhc_info.score,
                                             'Expression_Level': Expression_Level,
                                             'Expression_score': Expression_Level})
@@ -1862,7 +1997,8 @@ def write_output_file(peptide_info, expression, net_mhc_BA, net_mhc_EL,
     return output_file
 
 
-def state_allele_frequency(allele_fractions, mutation_info):
+def state_tumor_vaf(allele_fractions, mutation_info):
+    # check IDs frim allele_fractions dict are in mutation info, forones missing in mutation_info - fill with NA
     # create ID
     allele_fraction_id = '{chromosome}_{genomic_position}_{altered_allele}'.format(
         chromosome=mutation_info.chr,
@@ -1871,21 +2007,46 @@ def state_allele_frequency(allele_fractions, mutation_info):
     # extract fraction
     if allele_fractions is not None:
         if allele_fraction_id in allele_fractions:
-            allele_frequency = allele_fractions[allele_fraction_id]
+            tumor_vaf = allele_fractions[allele_fraction_id]
         else:
-            allele_frequency = 0
+            tumor_vaf = 0
             print('\tAllele frequency for id {} not found; annotated as 0'.format(allele_fraction_id))
     else:
-        allele_frequency = 0
+        tumor_vaf = 0
 
-    return allele_frequency
+    return tumor_vaf
+
+
+def state_snv_qc(snv_qc, mutation_info):
+    # fills snv_qc info or a single peptide/mutation while writing the output file
+    # checks IDs from allele_fractions dict are in mutation info, for ones missing in mutation_info - fill with NA
+    # returns a dict {tumor_vaf, :normal_vaf, t_depth, n_depth, t_alt_count}
+
+    snv_qc_id = '{chromosome}_{genomic_position}_{altered_allele}'.format(
+        chromosome=mutation_info.chr,
+        genomic_position=mutation_info.pos if not '-' in mutation_info.pos else mutation_info.pos.split('-')[0],
+        altered_allele=mutation_info.alt_allele)
+    # extract fraction
+    qc_none = {'tumor_vaf': None, 'normal_vaf': None,
+               't_depth': None, 'n_depth': None, 't_alt_count': None}
+
+    if snv_qc is not None:
+        if snv_qc_id in snv_qc:
+            snv_qcs = snv_qc[snv_qc_id]
+        else:
+            snv_qcs = qc_none
+            print('\tSNV QC is {} not found; annotated as NA')
+    else:
+        snv_qcs = qc_none
+
+    return snv_qcs
 
 
 def extract_expression_value(expression_file_type, expression, gene_id, webserver, transcripts, printed_ids):
     expression_sum = None
     if not expression is None:
         if expression_file_type == 'transcript':
-            # should I remove .[0-9]+ here or while adding tr id in the beggining?
+            # should I remove .[0-9]+ here or while adding tr id in the beginning?
             transcripts = [re.sub('\\..+', '', x) for x in transcripts]
 
             for trans_id in transcripts:
@@ -1935,7 +2096,7 @@ def extract_protein_position(transcript_ids, mutation_id_vep, gene_id, protein_p
     return protein_positions_extracted
 
 
-def score_creation(rank_normal, rank_mutant, expression_sum, gene_symbol, mismatches, allele_frequency,
+def score_creation(rank_normal, rank_mutant, expression_sum, gene_symbol, mismatches, tumor_vaf,
                    reference_peptides, mutant_peptide):
     expression = 0 if expression_sum is None else float(expression_sum)
     normal_match = 0 if mutant_peptide in reference_peptides else 1
@@ -1950,7 +2111,7 @@ def score_creation(rank_normal, rank_mutant, expression_sum, gene_symbol, mismat
 
     # calculate priority score
     priority_score = affinity_mutant_score * expression_score * (
-            1 - ((2 ** - mismatches) * affinity_normal_score)) * float(allele_frequency) * normal_match
+            1 - ((2 ** - mismatches) * affinity_normal_score)) * float(tumor_vaf) * normal_match
 
     # Scores = namedtuple('scores', ['affinity_mutant_score', 'affinity_normal_score', 'expression_score'])
     # scores = Scores(affinity_mutant_score, affinity_normal_score, expression_score)
@@ -1981,7 +2142,7 @@ def mismatch_snv_normal_peptide_conversion(normal_peptide, peptide_position, con
 def write_log_file(argv, peptide_length, sequence_count, reference_peptide_counters, vep_counters, peptide_counters,
                    start_time_mupex, start_time_mupei, start_time, end_time_mupex, HLAalleles, netMHCpan_runtime,
                    unique_mutant_peptide_count, unique_alleles, tmp_dir, webserver, version):
-    print_ifnot_webserver('\tWriting log file\n', webserver)
+    print_ifnot_webserver('\tWriting log file\n', webserver)  # gotta make log with fusions
     log_file = NamedTemporaryFile(delete=False, dir=tmp_dir)
 
     log = """
@@ -2132,8 +2293,10 @@ def usage():
                                                                                     DEFAULT
 
         Required arguments:
-        -v, --vcf-file <file>   VCF file of variant calls, preferably from
+        -v, --vcf-file <file>   VCF file of variant calls, preferably from          SampX.vcf
                                 MuTect (only SNVs) or MuTect2 (SNVs and indels)
+        -z, --fusion_file       Fusion file, tsv file with chimeric proteins        SampX_fusions.tsv
+                                Currently only supports output of Arriba    
 
         Recommended arguments:
         -a, --alleles           HLA alleles, comma separated.                       HLA-A02:01
@@ -2147,8 +2310,6 @@ def usage():
 
         Optional arguments affecting output files:
 
-        -fu, --fusion_file      Fusion file, tsv file with chimeric proteins        fusions.tsv
-                                Currently only supports output of Arriba
         -o, --output-file       Output file name.                                   <VEP-file>.mupexi
         -d, --out-dir           Output directory - full path.                       current directory
         -p, --prefix            Prefix for output files - will be applied           <VCF-file>
@@ -2201,7 +2362,7 @@ def read_options(argv):
             print('No options supplied')
             usage()
     except getopt.GetoptError as e:
-        usage();
+        usage()
         sys.exit(e)
 
     # Create dictionary of long and short formats
@@ -2240,7 +2401,7 @@ def read_options(argv):
 
     # Print usage help
     if '-h' in list(opts.keys()):
-        usage();
+        usage()
         sys.exit()
 
     # Define values
@@ -2249,7 +2410,7 @@ def read_options(argv):
 
     if vcf_file is None and fusion_file is None:
         sys.exit('At least vcf file or fusion file must be provided, terminating...')
-        usage();
+        usage()
     elif fusion_file is None:
         print('Fusion file is missing, chimeric junction antigens will not be calculated')
     elif vcf_file is None:
@@ -2275,7 +2436,7 @@ def read_options(argv):
     assembly = opts['-A'] if '-A' in list(opts.keys()) else None
     fork = opts['-F'] if '-F' in list(opts.keys()) else 2
     if int(fork) <= 1:
-        usage();
+        usage()
         sys.exit('VEP fork number must be greater than 1')
     species = opts['-s'] if '-s' in list(opts.keys()) else 'human'
     netmhc_anal = 'yes' if '-n' in list(opts.keys()) else None
